@@ -345,38 +345,113 @@ local function parseArgs(argText)
     return success and args or {}
 end
 
---// Add remote to UI with enhanced styling and error handling
+-- Make draggable with enhanced functionality
+local function makeDraggable(gui, handle)
+    local dragging = false
+    local dragStart, startPos
+
+    local function updateDrag(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            local targetPos = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+            
+            -- Smooth movement with TweenService
+            local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Linear)
+            TweenService:Create(gui, tweenInfo, {Position = targetPos}):Play()
+        end
+    end
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = gui.Position
+            
+            -- Change cursor
+            handle.BorderSizePixel = 1
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    handle.BorderSizePixel = 0
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging then
+            updateDrag(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+            handle.BorderSizePixel = 0
+        end
+    end)
+end
+
+-- Apply draggable to the main frame
+makeDraggable(mainFrame, titleBar)
+
+--// Add remote to UI with enhanced error handling and protection
 local function addRemote(remote)
-    -- Validate remote
-    if not remote or typeof(remote) ~= "Instance" or not remote.Parent then
-        warn("Invalid remote object provided to addRemote")
+    -- Initial validation
+    if not remote or typeof(remote) ~= "Instance" then
+        warn("Invalid remote object")
         return
     end
-    
-    -- Ensure we have a valid category
-    local category = "other"
-    if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
-        category = getRemoteCategory(remote)
-    else
-        warn("Invalid remote type provided to addRemote")
+
+    -- Ensure remote still exists and has parent
+    if not remote.Parent then
+        warn("Remote has no parent")
         return
     end
-    
+
+    -- Get category with error handling
+    local category
+    local success, result = pcall(function()
+        if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
+            return getRemoteCategory(remote)
+        end
+        return "other"
+    end)
+    category = success and result or "other"
+
+    -- Validate tab page exists
     local tabPage = tabPages[category:lower()]
     if not tabPage or not tabPage.page then
         warn("Invalid tab page for category: " .. category)
         return
     end
 
-    -- Create container with error protection
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, -10, 0, 70)
-    container.BorderSizePixel = 0
-    container.Name = remote.Name
-    container.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    -- Create container with full error protection
+    local container
+    success, result = pcall(function()
+        local c = Instance.new("Frame")
+        c.Size = UDim2.new(1, -10, 0, 70)
+        c.BorderSizePixel = 0
+        c.Name = remote.Name
+        c.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        return c
+    end)
+
+    if not success then
+        warn("Failed to create container: " .. tostring(result))
+        return
+    end
+    container = result
 
     -- Protect the entire UI creation process
-    local success, err = pcall(function()
+    success, result = pcall(function()
+        -- Set parent first to ensure proper hierarchy
         container.Parent = tabPage.page
         
         local containerCorner = Instance.new("UICorner")
@@ -660,156 +735,126 @@ local function addRemote(remote)
             end
         end)
         
-        -- Update canvas size with error protection
-        if tabPage and tabPage.page and tabPage.layout then
+        -- Update canvas size with protection
+        task.spawn(function()
+            if tabPage and tabPage.page and tabPage.layout then
+                local success, err = pcall(function()
+                    local size = tabPage.layout.AbsoluteContentSize
+                    if size then
+                        tabPage.page.CanvasSize = UDim2.new(0, 0, 0, size.Y + 10)
+                    end
+                end)
+                if not success then
+                    warn("Failed to update canvas size: " .. tostring(err))
+                end
+            end
+        end)
+    end)
+
+    if not success then
+        warn("Failed to create remote UI: " .. tostring(result))
+        pcall(function()
+            if container and container.Parent then
+                container:Destroy()
+            end
+        end)
+    end
+end
+
+-- Enhanced scan function with better error handling
+local function scan(container)
+    if not container or typeof(container) ~= "Instance" then
+        warn("Invalid scan container")
+        return
+    end
+
+    local function processRemote(obj)
+        if not obj or not obj.Parent then return end
+        
+        task.spawn(function()
             local success, err = pcall(function()
-                local contentSize = tabPage.layout.AbsoluteContentSize
-                if contentSize then
-                    tabPage.page.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                    addRemote(obj)
                 end
             end)
+            
             if not success then
-                warn("Failed to update canvas size: " .. tostring(err))
+                warn("Failed to process remote " .. obj:GetFullName() .. ": " .. tostring(err))
             end
+        end)
+    end
+
+    -- Process existing remotes
+    local success, err = pcall(function()
+        for _, obj in ipairs(container:GetDescendants()) do
+            processRemote(obj)
         end
     end)
-    
+
     if not success then
-        warn("Failed to create remote UI for: " .. remote.Name .. " - " .. tostring(err))
-        if container and container.Parent then
-            container:Destroy()
-        end
+        warn("Failed to scan container " .. container:GetFullName() .. ": " .. tostring(err))
     end
-end
 
--- Add remote history logging
-local remoteHistory = {}
-local maxHistorySize = 50
-
-local function logRemoteExecution(remote, args, success, result)
-    table.insert(remoteHistory, 1, {
-        remote = remote,
-        args = args,
-        success = success,
-        result = result,
-        timestamp = os.time()
-    })
-    if #remoteHistory > maxHistorySize then
-        table.remove(remoteHistory)
-    end
-end
-
--- Copy path button functionality
-local function createCopyButton(container, text)
-    local copyButton = Instance.new("TextButton")
-    copyButton.Size = UDim2.new(0.1, 0, 0.3, 0)
-    copyButton.Position = UDim2.new(0.77, 0, 0.1, 0)
-    copyButton.Text = "📋"
-    copyButton.BackgroundTransparency = 1
-    copyButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-    copyButton.Font = Enum.Font.GothamBold
-    copyButton.TextSize = 16
-    copyButton.Parent = container
-    
-    copyButton.MouseButton1Click:Connect(function()
-        setclipboard(text)
-        copyButton.Text = "✓"
-        copyButton.TextColor3 = Color3.fromRGB(50, 200, 50)
-        wait(1)
-        copyButton.Text = "📋"
-        copyButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+    -- Watch for new remotes
+    local connection
+    success, err = pcall(function()
+        connection = container.DescendantAdded:Connect(processRemote)
     end)
+
+    if not success then
+        warn("Failed to set up remote watcher: " .. tostring(err))
+    end
+
+    return connection
 end
 
--- Enhanced error handling
-local function handleRemoteError(remote, errorMsg)
-    local errorTypes = {
-        ["timeout"] = "Remote call timed out. The server might be busy.",
-        ["permission"] = "Permission denied. You might not have access to this remote.",
-        ["argument"] = "Invalid arguments provided.",
-        ["network"] = "Network error. Check your connection.",
-        ["nil"] = "Remote no longer exists.",
-        ["destroyed"] = "Remote was destroyed.",
-        ["invalid"] = "Invalid remote operation."
+-- Start scanning with proper error handling and status updates
+title.Text = "🔄 Scanning game..."
+
+local function scanGame()
+    local scanLocations = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("StarterGui"),
+        game:GetService("StarterPlayer"),
+        game:GetService("Workspace"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("StarterPack")
     }
     
-    local errorMsg = "Unknown error"
-    for pattern, msg in pairs(errorTypes) do
-        if string.find(string.lower(tostring(errorMsg)), pattern) then
-            errorMsg = msg
-            break
-        end
-    end
-    
-    warn("❌ Error with remote '" .. (remote and remote.Name or "Unknown") .. "': " .. errorMsg)
-    return errorMsg
-end
-
--- Argument validation
-local function validateArgs(args)
-    local validatedArgs = {}
-    for i, arg in ipairs(args) do
-        -- Convert string numbers to actual numbers
-        if type(arg) == "string" and tonumber(arg) then
-            arg = tonumber(arg)
-        end
-        -- Handle boolean strings
-        if type(arg) == "string" and (arg:lower() == "true" or arg:lower() == "false") then
-            arg = arg:lower() == "true"
-        end
-        validatedArgs[i] = arg
-    end
-    return validatedArgs
-end
-
--- Enhanced preset system with common game values
-local enhancedPresets = {
-    Give = {
-        values = {"1", "10", "100", "1000", "max", "all"},
-        items = {"Coin", "Gem", "XP", "Level", "Power", "Energy"},
-        states = {"true", "false", "yes", "no", "on", "off"}
-    },
-    Stats = {
-        multipliers = {"1", "2", "5", "10", "100"},
-        levels = {"1", "10", "50", "100", "max"},
-        states = {"enabled", "disabled", "locked", "unlocked"}
-    },
-    Currency = {
-        amounts = {"100", "1000", "10000", "100000", "1000000"},
-        multipliers = {"2x", "5x", "10x", "100x"},
-        special = {"vip", "premium", "bonus", "super"}
-    }
-}
-
--- Add to presetArgs
-for category, values in pairs(enhancedPresets) do
-    if not presetArgs[category] then
-        presetArgs[category] = {}
-    end
-    for _, valueSet in pairs(values) do
-        for _, value in ipairs(valueSet) do
-            table.insert(presetArgs[category], value)
-        end
-    end
-end
-
--- Search functionality
-searchBar:GetPropertyChangedSignal("Text"):Connect(function()
-    local searchText = searchBar.Text:lower()
-    for _, tabInfo in pairs(tabPages) do
-        for _, child in ipairs(tabInfo.page:GetChildren()) do
-            if child:IsA("Frame") then
-                local nameLabel = child:FindFirstChild("TextLabel")
-                if nameLabel then
-                    local name = nameLabel.Text:lower()
-                    child.Visible = searchText == "" or string.find(name, searchText)
-                end
+    local successCount = 0
+    for _, location in ipairs(scanLocations) do
+        local success = pcall(function()
+            if location then
+                scan(location)
+                successCount = successCount + 1
             end
+        end)
+        
+        if not success then
+            warn("Failed to scan location: " .. location.Name)
         end
+    end
+    
+    -- Update title based on scan results
+    if successCount == #scanLocations then
+        title.Text = "🎮 Game Mod Menu"
+        print("✅ Game Mod Menu loaded successfully!")
+    else
+        title.Text = "🎮 Game Mod Menu (Partial Scan)"
+        warn("⚠️ Some locations could not be scanned (" .. successCount .. "/" .. #scanLocations .. " successful)")
+    end
+end
+
+-- Run scanning in protected thread
+task.spawn(function()
+    local success, err = pcall(scanGame)
+    if not success then
+        warn("❌ Critical error during scanning: " .. tostring(err))
+        title.Text = "🎮 Game Mod Menu (Error)"
     end
 end)
 
--- Close button functionality
+--// Close button functionality
 closeButton.MouseButton1Click:Connect(function()
     local tween = TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 0, 0, 0)})
     tween:Play()
