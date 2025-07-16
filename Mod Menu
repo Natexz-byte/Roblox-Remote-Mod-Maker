@@ -153,6 +153,7 @@ local tabs = {
     {name = "Combat", color = Color3.fromRGB(255, 85, 85)},
     {name = "Teleport", color = Color3.fromRGB(85, 255, 127)},
     {name = "Player", color = Color3.fromRGB(170, 170, 255)},
+    {name = "Game", color = Color3.fromRGB(170, 85, 255)},  -- Added for gamemode remotes
     {name = "Favorites", color = Color3.fromRGB(255, 223, 85)},
     {name = "Other", color = Color3.fromRGB(170, 170, 170)}
 }
@@ -310,7 +311,10 @@ local pathKeywords = {
     }
 }
 
+--// Get remote category with fallback
 local function getRemoteCategory(remote)
+    if not remote then return "other" end
+    
     local fullPath = remote:GetFullName():lower()
     local name = remote.Name:lower()
     
@@ -318,6 +322,8 @@ local function getRemoteCategory(remote)
     for category, paths in pairs(pathKeywords) do
         for _, path in ipairs(paths) do
             if string.find(fullPath, path:lower()) then
+                -- Map gamemode to game
+                if category == "gamemode" then return "game" end
                 return category
             end
         end
@@ -327,6 +333,8 @@ local function getRemoteCategory(remote)
     for category, keywordList in pairs(keywords) do
         for _, keyword in ipairs(keywordList) do
             if string.find(name, keyword:lower()) then
+                -- Map gamemode to game
+                if category == "gamemode" then return "game" end
                 return category
             end
         end
@@ -335,71 +343,28 @@ local function getRemoteCategory(remote)
     return "other"
 end
 
---// Parse argument input into Lua values
+--// Parse argument input into Lua values with better security
 local function parseArgs(argText)
-    if argText == "" then return {} end
+    if not argText or argText == "" then return {} end
+    
+    -- Basic validation
+    if string.match(argText, "[^%w%s,%.\"'%-_%[%]{}]") then
+        return {}  -- Return empty if suspicious characters found
+    end
     
     local success, args = pcall(function()
-        return loadstring("return {" .. argText .. "}")()
+        -- Create a safe wrapper
+        local code = "return {" .. argText .. "}"
+        local fn, err = loadstring(code)
+        if not fn then return {} end
+        
+        -- Execute in protected mode
+        local ok, result = pcall(fn)
+        return ok and result or {}
     end)
+    
     return success and args or {}
 end
-
--- Make draggable with enhanced functionality
-local function makeDraggable(gui, handle)
-    local dragging = false
-    local dragStart, startPos
-
-    local function updateDrag(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            local targetPos = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-            
-            -- Smooth movement with TweenService
-            local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Linear)
-            TweenService:Create(gui, tweenInfo, {Position = targetPos}):Play()
-        end
-    end
-
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = gui.Position
-            
-            -- Change cursor
-            handle.BorderSizePixel = 1
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                    handle.BorderSizePixel = 0
-                end
-            end)
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging then
-            updateDrag(input)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            handle.BorderSizePixel = 0
-        end
-    end)
-end
-
--- Apply draggable to the main frame
-makeDraggable(mainFrame, titleBar)
 
 -- Initialize favorites table if it doesn't exist
 local favorites = {}
@@ -414,15 +379,48 @@ local presetArgs = {
     Player = {"name", "value", "setting", "true", "false"}
 }
 
---// Add remote to UI (simplified and fixed)
+-- Filter function to check if remote belongs to the local player
+local function isPlayerRemote(remote)
+    local path = remote:GetFullName():lower()
+    local playerName = Players.LocalPlayer.Name:lower()
+    
+    -- Check if remote is in player's character or backpack
+    if string.find(path, playerName) then
+        return true
+    end
+    
+    -- Check if remote is in ReplicatedStorage (shared remotes)
+    if string.find(path, "replicatedstorage") then
+        return true
+    end
+    
+    -- Check if remote is in StarterGui or StarterPlayer (UI related)
+    if string.find(path, "startergui") or string.find(path, "starterplayer") then
+        return true
+    end
+    
+    return false
+end
+
+--// Add remote to UI (improved version)
 local function addRemote(remote)
     -- Basic validation
-    if not remote or not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then return end
+    if not remote or not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then 
+        return 
+    end
     
-    -- Get category
+    -- Only show remotes relevant to the local player
+    if not isPlayerRemote(remote) then
+        return
+    end
+    
+    -- Get category and validate tab page exists
     local category = getRemoteCategory(remote)
     local tabPage = tabPages[category:lower()]
-    if not tabPage then return end
+    if not tabPage or not tabPage.page then
+        tabPage = tabPages["other"]
+        if not tabPage then return end
+    end
     
     -- Create container
     local container = Instance.new("Frame")
@@ -470,10 +468,10 @@ local function addRemote(remote)
     pathLabel.TextWrapped = true
     pathLabel.Parent = container
 
-    -- Type indicator
+    -- Type indicator with aligned position
     local typeLabel = Instance.new("TextLabel")
     typeLabel.Size = UDim2.new(0.15, 0, 0.3, 0)
-    typeLabel.Position = UDim2.new(0.65, 0, 0.1, 0)
+    typeLabel.Position = UDim2.new(0.83, 0, 0.1, 0)  -- Aligned with RUN button
     local isEvent = remote:IsA("RemoteEvent")
     typeLabel.Text = isEvent and "EVENT" or "FUNCTION"
     typeLabel.BackgroundColor3 = isEvent and Color3.fromRGB(100, 200, 100) or Color3.fromRGB(200, 100, 200)
@@ -504,11 +502,11 @@ local function addRemote(remote)
     argsCorner.CornerRadius = UDim.new(0, 4)
     argsCorner.Parent = argsInput
 
-    -- Execute button
+    -- Execute button with updated text
     local runButton = Instance.new("TextButton")
     runButton.Size = UDim2.new(0.15, 0, 0.3, 0)
-    runButton.Position = UDim2.new(0.83, 0, 0.65, 0)
-    runButton.Text = "EXECUTE"
+    runButton.Position = UDim2.new(0.83, 0, 0.65, 0)  -- Aligned with EVENT/FUNCTION label
+    runButton.Text = "RUN"
     runButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
     runButton.TextColor3 = Color3.new(1, 1, 1)
     runButton.Font = Enum.Font.GothamBold
