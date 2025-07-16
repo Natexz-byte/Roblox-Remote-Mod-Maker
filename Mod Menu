@@ -401,458 +401,186 @@ end
 -- Apply draggable to the main frame
 makeDraggable(mainFrame, titleBar)
 
---// Add remote to UI with enhanced error handling and protection
+-- Initialize favorites table if it doesn't exist
+local favorites = {}
+
+-- Initialize preset arguments
+local presetArgs = {
+    Give = {"amount", "itemName", "quantity", "1", "true"},
+    Stats = {"value", "amount", "10", "100", "max"},
+    Currency = {"amount", "1000", "10000", "100000"},
+    Combat = {"damage", "100", "weapon", "true"},
+    Teleport = {"position", "place", "location", "spawn"},
+    Player = {"name", "value", "setting", "true", "false"}
+}
+
+--// Add remote to UI (simplified and fixed)
 local function addRemote(remote)
-    -- Initial validation
-    if not remote or typeof(remote) ~= "Instance" then
-        warn("Invalid remote object")
-        return
-    end
-
-    -- Ensure remote still exists and has parent
-    if not remote.Parent then
-        warn("Remote has no parent")
-        return
-    end
-
-    -- Get category with error handling
-    local category
-    local success, result = pcall(function()
-        if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
-            return getRemoteCategory(remote)
-        end
-        return "other"
-    end)
-    category = success and result or "other"
-
-    -- Validate tab page exists
+    -- Basic validation
+    if not remote or not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then return end
+    
+    -- Get category
+    local category = getRemoteCategory(remote)
     local tabPage = tabPages[category:lower()]
-    if not tabPage or not tabPage.page then
-        warn("Invalid tab page for category: " .. category)
-        return
+    if not tabPage then return end
+    
+    -- Create container
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -10, 0, 70)
+    container.BorderSizePixel = 0
+    container.Name = remote.Name
+    container.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    container.Parent = tabPage.page
+
+    -- Add rounded corners
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 6)
+    containerCorner.Parent = container
+
+    -- Create main elements
+    -- Name label
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(0.6, 0, 0.4, 0)
+    nameLabel.Position = UDim2.new(0, 10, 0, 5)
+    nameLabel.Text = remote.Name
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 14
+    nameLabel.TextWrapped = true
+    nameLabel.Parent = container
+
+    -- Path label
+    local fullPath = remote:GetFullName()
+    local shortPath = fullPath:gsub(remote.Name .. "$", "")
+    if #shortPath > 40 then
+        shortPath = "..." .. shortPath:sub(-37)
     end
 
-    -- Create container with full error protection
-    local container
-    success, result = pcall(function()
-        local c = Instance.new("Frame")
-        c.Size = UDim2.new(1, -10, 0, 70)
-        c.BorderSizePixel = 0
-        c.Name = remote.Name
-        c.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-        return c
-    end)
+    local pathLabel = Instance.new("TextLabel")
+    pathLabel.Size = UDim2.new(0.6, 0, 0.3, 0)
+    pathLabel.Position = UDim2.new(0, 10, 0.4, 0)
+    pathLabel.Text = shortPath
+    pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    pathLabel.BackgroundTransparency = 1
+    pathLabel.TextXAlignment = Enum.TextXAlignment.Left
+    pathLabel.Font = Enum.Font.Gotham
+    pathLabel.TextSize = 10
+    pathLabel.TextWrapped = true
+    pathLabel.Parent = container
 
-    if not success then
-        warn("Failed to create container: " .. tostring(result))
-        return
-    end
-    container = result
+    -- Type indicator
+    local typeLabel = Instance.new("TextLabel")
+    typeLabel.Size = UDim2.new(0.15, 0, 0.3, 0)
+    typeLabel.Position = UDim2.new(0.65, 0, 0.1, 0)
+    local isEvent = remote:IsA("RemoteEvent")
+    typeLabel.Text = isEvent and "EVENT" or "FUNCTION"
+    typeLabel.BackgroundColor3 = isEvent and Color3.fromRGB(100, 200, 100) or Color3.fromRGB(200, 100, 200)
+    typeLabel.TextColor3 = Color3.new(1, 1, 1)
+    typeLabel.Font = Enum.Font.GothamBold
+    typeLabel.TextSize = 10
+    typeLabel.TextXAlignment = Enum.TextXAlignment.Center
+    typeLabel.Parent = container
 
-    -- Protect the entire UI creation process
-    success, result = pcall(function()
-        -- Set parent first to ensure proper hierarchy
-        container.Parent = tabPage.page
+    local typeCorner = Instance.new("UICorner")
+    typeCorner.CornerRadius = UDim.new(0, 3)
+    typeCorner.Parent = typeLabel
+
+    -- Arguments input
+    local argsInput = Instance.new("TextBox")
+    argsInput.Size = UDim2.new(0.7, 0, 0.3, 0)
+    argsInput.Position = UDim2.new(0, 10, 0.65, 0)
+    argsInput.PlaceholderText = "Arguments (e.g., \"value\", 100, true)"
+    argsInput.Text = ""
+    argsInput.TextColor3 = Color3.new(1, 1, 1)
+    argsInput.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    argsInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+    argsInput.Font = Enum.Font.Gotham
+    argsInput.TextSize = 12
+    argsInput.Parent = container
+
+    local argsCorner = Instance.new("UICorner")
+    argsCorner.CornerRadius = UDim.new(0, 4)
+    argsCorner.Parent = argsInput
+
+    -- Execute button
+    local runButton = Instance.new("TextButton")
+    runButton.Size = UDim2.new(0.15, 0, 0.3, 0)
+    runButton.Position = UDim2.new(0.83, 0, 0.65, 0)
+    runButton.Text = "EXECUTE"
+    runButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    runButton.TextColor3 = Color3.new(1, 1, 1)
+    runButton.Font = Enum.Font.GothamBold
+    runButton.TextSize = 12
+    runButton.Parent = container
+
+    local runCorner = Instance.new("UICorner")
+    runCorner.CornerRadius = UDim.new(0, 4)
+    runCorner.Parent = runButton
+
+    -- Add execute functionality
+    runButton.MouseButton1Click:Connect(function()
+        local args = parseArgs(argsInput.Text)
         
-        local containerCorner = Instance.new("UICorner")
-        containerCorner.CornerRadius = UDim.new(0, 6)
-        containerCorner.Parent = container
-        
-        -- Remote name label
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(0.6, 0, 0.4, 0)
-        nameLabel.Position = UDim2.new(0, 10, 0, 5)
-        nameLabel.Text = remote.Name
-        nameLabel.TextColor3 = Color3.new(1, 1, 1)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 14
-        nameLabel.TextWrapped = true
-        nameLabel.Parent = container
-        
-        -- Path label (shortened)
-        local pathLabel = Instance.new("TextLabel")
-        pathLabel.Size = UDim2.new(0.6, 0, 0.3, 0)
-        pathLabel.Position = UDim2.new(0, 10, 0.4, 0)
-        local fullPath = remote:GetFullName()
-        -- Shorten the path if it's too long
-        local shortPath = fullPath:gsub(remote.Name .. "$", "")
-        if #shortPath > 40 then
-            shortPath = "..." .. shortPath:sub(-37)
+        if remote:IsA("RemoteEvent") then
+            remote:FireServer(unpack(args))
+        else
+            local result = remote:InvokeServer(unpack(args))
+            if result then
+                print("Result:", result)
+            end
         end
-        pathLabel.Text = shortPath
-        pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        pathLabel.BackgroundTransparency = 1
-        pathLabel.TextXAlignment = Enum.TextXAlignment.Left
-        pathLabel.Font = Enum.Font.Gotham
-        pathLabel.TextSize = 10
-        pathLabel.TextWrapped = true
-        pathLabel.Parent = container
-
-        -- Add copy button for the remote path
-        createCopyButton(container, fullPath)
-
-        -- Type indicator with enhanced styling
-        local typeLabel = Instance.new("TextLabel")
-        typeLabel.Size = UDim2.new(0.15, 0, 0.3, 0)
-        typeLabel.Position = UDim2.new(0.65, 0, 0.1, 0)
-        local isEvent = remote:IsA("RemoteEvent")
-        typeLabel.Text = isEvent and "EVENT" or "FUNCTION"
-        typeLabel.BackgroundColor3 = isEvent and Color3.fromRGB(100, 200, 100) or Color3.fromRGB(200, 100, 200)
-        typeLabel.TextColor3 = Color3.new(1, 1, 1)
-        typeLabel.Font = Enum.Font.GothamBold
-        typeLabel.TextSize = 10
-        typeLabel.TextXAlignment = Enum.TextXAlignment.Center
-        typeLabel.Parent = container
-        
-        local typeCorner = Instance.new("UICorner")
-        typeCorner.CornerRadius = UDim.new(0, 3)
-        typeCorner.Parent = typeLabel
-
-        -- Status indicator for last execution
-        local statusLabel = Instance.new("TextLabel")
-        statusLabel.Size = UDim2.new(0.15, 0, 0.2, 0)
-        statusLabel.Position = UDim2.new(0.65, 0, 0.45, 0)
-        statusLabel.Text = ""
-        statusLabel.BackgroundTransparency = 1
-        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        statusLabel.Font = Enum.Font.Gotham
-        statusLabel.TextSize = 10
-        statusLabel.TextXAlignment = Enum.TextXAlignment.Center
-        statusLabel.Parent = container
-
-        -- Arguments input with auto-complete
-        local argsInput = Instance.new("TextBox")
-        argsInput.Size = UDim2.new(0.7, 0, 0.3, 0)
-        argsInput.Position = UDim2.new(0, 10, 0.65, 0)
-        argsInput.PlaceholderText = "Arguments (e.g., \"value\", 100, true)"
-        argsInput.Text = ""
-        argsInput.TextColor3 = Color3.new(1, 1, 1)
-        argsInput.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-        argsInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
-        argsInput.Font = Enum.Font.Gotham
-        argsInput.TextSize = 12
-        argsInput.Parent = container
-        
-        local argsCorner = Instance.new("UICorner")
-        argsCorner.CornerRadius = UDim.new(0, 4)
-        argsCorner.Parent = argsInput
-
-        -- Error display
-        local errorLabel = Instance.new("TextLabel")
-        errorLabel.Size = UDim2.new(0.7, 0, 0, 0)
-        errorLabel.Position = UDim2.new(0, 10, 0.95, 0)
-        errorLabel.Text = ""
-        errorLabel.BackgroundTransparency = 1
-        errorLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        errorLabel.Font = Enum.Font.Gotham
-        errorLabel.TextSize = 10
-        errorLabel.TextXAlignment = Enum.TextXAlignment.Left
-        errorLabel.Visible = false
-        errorLabel.Parent = container
-
-        -- Preset arguments dropdown
-        local presetButton = Instance.new("TextButton")
-        presetButton.Size = UDim2.new(0.15, 0, 0.3, 0)
-        presetButton.Position = UDim2.new(0.72, 0, 0.65, 0)
-        presetButton.Text = "📝"
-        presetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-        presetButton.TextColor3 = Color3.new(1, 1, 1)
-        presetButton.Font = Enum.Font.GothamBold
-        presetButton.TextSize = 14
-        presetButton.Parent = container
-        
-        local presetCorner = Instance.new("UICorner")
-        presetCorner.CornerRadius = UDim.new(0, 4)
-        presetCorner.Parent = presetButton
-
-        -- Favorite button with enhanced feedback
-        local favButton = Instance.new("TextButton")
-        favButton.Size = UDim2.new(0.1, 0, 0.3, 0)
-        favButton.Position = UDim2.new(0.88, 0, 0.1, 0)
-        favButton.Text = favorites[remote:GetFullName()] and "⭐" or "☆"
-        favButton.BackgroundTransparency = 1
-        favButton.TextColor3 = Color3.fromRGB(255, 223, 85)
-        favButton.Font = Enum.Font.GothamBold
-        favButton.TextSize = 20
-        favButton.Parent = container
-
-        favButton.MouseButton1Click:Connect(function()
-            toggleFavorite(remote)
-            favButton.Text = favorites[remote:GetFullName()] and "⭐" or "☆"
-            -- Add visual feedback
-            local originalColor = favButton.TextColor3
-            favButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-            wait(0.2)
-            favButton.TextColor3 = originalColor
-        end)
-
-        -- Execute button with loading state
-        local runButton = Instance.new("TextButton")
-        runButton.Size = UDim2.new(0.15, 0, 0.3, 0)
-        runButton.Position = UDim2.new(0.83, 0, 0.65, 0)
-        runButton.Text = "EXECUTE"
-        runButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-        runButton.TextColor3 = Color3.new(1, 1, 1)
-        runButton.Font = Enum.Font.GothamBold
-        runButton.TextSize = 12
-        runButton.Parent = container
-        
-        local runCorner = Instance.new("UICorner")
-        runCorner.CornerRadius = UDim.new(0, 4)
-        runCorner.Parent = runButton
-
-        -- Enhanced preset menu with categories
-        local presetMenu = nil
-        presetButton.MouseButton1Click:Connect(function()
-            if presetMenu then
-                presetMenu:Destroy()
-                presetMenu = nil
-                return
-            end
-            
-            presetMenu = Instance.new("Frame")
-            presetMenu.Size = UDim2.new(0, 150, 0, 200)
-            presetMenu.Position = UDim2.new(0.72, 0, 0.95, 0)
-            presetMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-            presetMenu.BorderSizePixel = 0
-            presetMenu.ZIndex = 10
-            presetMenu.Parent = container
-            
-            local menuCorner = Instance.new("UICorner")
-            menuCorner.CornerRadius = UDim.new(0, 6)
-            menuCorner.Parent = presetMenu
-            
-            local menuLayout = Instance.new("UIListLayout")
-            menuLayout.Padding = UDim.new(0, 5)
-            menuLayout.Parent = presetMenu
-
-            -- Add category labels and presets
-            local categoryPresets = enhancedPresets[category:sub(1,1):upper() .. category:sub(2)] or enhancedPresets["Other"] or {}
-            for label, values in pairs(categoryPresets) do
-                local categoryLabel = Instance.new("TextLabel")
-                categoryLabel.Size = UDim2.new(1, -10, 0, 20)
-                categoryLabel.Position = UDim2.new(0, 5, 0, 0)
-                categoryLabel.Text = label:upper()
-                categoryLabel.BackgroundTransparency = 1
-                categoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-                categoryLabel.Font = Enum.Font.GothamBold
-                categoryLabel.TextSize = 10
-                categoryLabel.Parent = presetMenu
-
-                for _, value in ipairs(values) do
-                    local presetItem = Instance.new("TextButton")
-                    presetItem.Size = UDim2.new(1, -10, 0, 25)
-                    presetItem.Position = UDim2.new(0, 5, 0, 0)
-                    presetItem.Text = tostring(value)
-                    presetItem.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-                    presetItem.TextColor3 = Color3.new(1, 1, 1)
-                    presetItem.Font = Enum.Font.Gotham
-                    presetItem.TextSize = 12
-                    presetItem.Parent = presetMenu
-                    
-                    local itemCorner = Instance.new("UICorner")
-                    itemCorner.CornerRadius = UDim.new(0, 4)
-                    itemCorner.Parent = presetItem
-                    
-                    presetItem.MouseButton1Click:Connect(function()
-                        local currentText = argsInput.Text
-                        if currentText == "" then
-                            argsInput.Text = tostring(value)
-                        else
-                            argsInput.Text = currentText .. ", " .. tostring(value)
-                        end
-                        presetMenu:Destroy()
-                        presetMenu = nil
-                    end)
-                end
-            end
-        end)
-
-        -- Hover effects
-        runButton.MouseEnter:Connect(function()
-            TweenService:Create(runButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(70, 220, 70)}):Play()
-        end)
-        
-        runButton.MouseLeave:Connect(function()
-            TweenService:Create(runButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 200, 50)}):Play()
-        end)
-
-        -- Enhanced remote execution with error handling
-        runButton.MouseButton1Click:Connect(function()
-            -- Clear previous error
-            errorLabel.Visible = false
-            
-            -- Parse and validate arguments
-            local rawArgs = parseArgs(argsInput.Text)
-            local args = validateArgs(rawArgs)
-            
-            -- Visual feedback - loading state
-            local originalText = runButton.Text
-            runButton.Text = "⌛"
-            
-            local success, result = pcall(function()
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer(unpack(args))
-                    return "Event fired successfully"
-                elseif remote:IsA("RemoteFunction") then
-                    return remote:InvokeServer(unpack(args))
-                end
-            end)
-
-            if success then
-                -- Log successful execution
-                logRemoteExecution(remote, args, true, result)
-                
-                -- Update status
-                statusLabel.Text = "Last: Success"
-                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-                
-                -- Visual feedback
-                runButton.Text = "✅"
-                wait(1)
-                runButton.Text = originalText
-            else
-                -- Handle error
-                local errorMsg = handleRemoteError(remote, tostring(result))
-                
-                -- Log failed execution
-                logRemoteExecution(remote, args, false, errorMsg)
-                
-                -- Show error
-                errorLabel.Text = errorMsg
-                errorLabel.Visible = true
-                
-                -- Update status
-                statusLabel.Text = "Last: Failed"
-                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-                
-                -- Visual feedback
-                runButton.Text = "❌"
-                wait(1)
-                runButton.Text = originalText
-            end
-        end)
-        
-        -- Update canvas size with protection
-        task.spawn(function()
-            if tabPage and tabPage.page and tabPage.layout then
-                local success, err = pcall(function()
-                    local size = tabPage.layout.AbsoluteContentSize
-                    if size then
-                        tabPage.page.CanvasSize = UDim2.new(0, 0, 0, size.Y + 10)
-                    end
-                end)
-                if not success then
-                    warn("Failed to update canvas size: " .. tostring(err))
-                end
-            end
-        end)
     end)
 
-    if not success then
-        warn("Failed to create remote UI: " .. tostring(result))
-        pcall(function()
-            if container and container.Parent then
-                container:Destroy()
-            end
-        end)
+    -- Update content size
+    local contentSize = tabPage.layout.AbsoluteContentSize
+    if contentSize then
+        tabPage.page.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
     end
 end
 
--- Enhanced scan function with better error handling
+--// Simplified scan function
 local function scan(container)
-    if not container or typeof(container) ~= "Instance" then
-        warn("Invalid scan container")
-        return
+    if not container then return end
+    
+    -- Scan existing remotes
+    for _, obj in ipairs(container:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            addRemote(obj)
+        end
     end
-
-    local function processRemote(obj)
-        if not obj or not obj.Parent then return end
-        
-        task.spawn(function()
-            local success, err = pcall(function()
-                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                    addRemote(obj)
-                end
-            end)
-            
-            if not success then
-                warn("Failed to process remote " .. obj:GetFullName() .. ": " .. tostring(err))
-            end
-        end)
-    end
-
-    -- Process existing remotes
-    local success, err = pcall(function()
-        for _, obj in ipairs(container:GetDescendants()) do
-            processRemote(obj)
+    
+    -- Watch for new remotes
+    container.DescendantAdded:Connect(function(obj)
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            addRemote(obj)
         end
     end)
-
-    if not success then
-        warn("Failed to scan container " .. container:GetFullName() .. ": " .. tostring(err))
-    end
-
-    -- Watch for new remotes
-    local connection
-    success, err = pcall(function()
-        connection = container.DescendantAdded:Connect(processRemote)
-    end)
-
-    if not success then
-        warn("Failed to set up remote watcher: " .. tostring(err))
-    end
-
-    return connection
 end
 
--- Start scanning with proper error handling and status updates
-title.Text = "🔄 Scanning game..."
-
-local function scanGame()
-    local scanLocations = {
+-- Start scanning process
+local function startScanning()
+    title.Text = "🔄 Scanning game..."
+    
+    local locations = {
         game:GetService("ReplicatedStorage"),
         game:GetService("StarterGui"),
         game:GetService("StarterPlayer"),
-        game:GetService("Workspace"),
-        game:GetService("ReplicatedFirst"),
-        game:GetService("StarterPack")
+        game:GetService("Workspace")
     }
     
-    local successCount = 0
-    for _, location in ipairs(scanLocations) do
-        local success = pcall(function()
-            if location then
-                scan(location)
-                successCount = successCount + 1
-            end
-        end)
-        
-        if not success then
-            warn("Failed to scan location: " .. location.Name)
+    for _, location in ipairs(locations) do
+        if location then
+            scan(location)
         end
     end
     
-    -- Update title based on scan results
-    if successCount == #scanLocations then
-        title.Text = "🎮 Game Mod Menu"
-        print("✅ Game Mod Menu loaded successfully!")
-    else
-        title.Text = "🎮 Game Mod Menu (Partial Scan)"
-        warn("⚠️ Some locations could not be scanned (" .. successCount .. "/" .. #scanLocations .. " successful)")
-    end
+    title.Text = "🎮 Game Mod Menu"
 end
 
--- Run scanning in protected thread
-task.spawn(function()
-    local success, err = pcall(scanGame)
-    if not success then
-        warn("❌ Critical error during scanning: " .. tostring(err))
-        title.Text = "🎮 Game Mod Menu (Error)"
-    end
-end)
+-- Start the scanning process
+task.spawn(startScanning)
 
 --// Close button functionality
 closeButton.MouseButton1Click:Connect(function()
