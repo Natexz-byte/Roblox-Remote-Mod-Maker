@@ -1,0 +1,818 @@
+--// Services
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+
+--// GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GameModMenu"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Main Frame with modern design
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 700, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+-- Add rounded corners
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = mainFrame
+
+-- Add subtle shadow effect
+local shadow = Instance.new("Frame")
+shadow.Size = UDim2.new(1, 6, 1, 6)
+shadow.Position = UDim2.new(0, -3, 0, -3)
+shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadow.BackgroundTransparency = 0.7
+shadow.ZIndex = -1
+shadow.Parent = mainFrame
+
+local shadowCorner = Instance.new("UICorner")
+shadowCorner.CornerRadius = UDim.new(0, 12)
+shadowCorner.Parent = shadow
+
+-- Title bar with gradient
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 50)
+titleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.Parent = titleBar
+
+-- Title with icon
+local title = Instance.new("TextLabel")
+title.Text = "🎮 Game Mod Menu"
+title.Size = UDim2.new(1, -100, 1, 0)
+title.Position = UDim2.new(0, 20, 0, 0)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+-- Close button
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -40, 0, 10)
+closeButton.Text = "×"
+closeButton.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 20
+closeButton.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeButton
+
+-- Search bar
+local searchBar = Instance.new("TextBox")
+searchBar.Size = UDim2.new(0, 200, 0, 30)
+searchBar.Position = UDim2.new(1, -250, 0, 10)
+searchBar.PlaceholderText = "🔍 Search remotes..."
+searchBar.Text = ""
+searchBar.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+searchBar.TextColor3 = Color3.new(1, 1, 1)
+searchBar.PlaceholderColor3 = Color3.fromRGB(200, 200, 200)
+searchBar.Font = Enum.Font.Gotham
+searchBar.TextSize = 14
+searchBar.Parent = titleBar
+
+local searchCorner = Instance.new("UICorner")
+searchCorner.CornerRadius = UDim.new(0, 6)
+searchCorner.Parent = searchBar
+
+-- Create tab system
+local tabContainer = Instance.new("Frame")
+tabContainer.Size = UDim2.new(1, -20, 0, 40)
+tabContainer.Position = UDim2.new(0, 10, 0, 60)
+tabContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+tabContainer.BorderSizePixel = 0
+tabContainer.Parent = mainFrame
+
+local tabCorner = Instance.new("UICorner")
+tabCorner.CornerRadius = UDim.new(0, 8)
+tabCorner.Parent = tabContainer
+
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.Padding = UDim.new(0, 5)
+tabLayout.Parent = tabContainer
+
+-- Content container for each tab
+local contentContainer = Instance.new("Frame")
+contentContainer.Size = UDim2.new(1, -20, 1, -110)
+contentContainer.Position = UDim2.new(0, 10, 0, 110)
+contentContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+contentContainer.BorderSizePixel = 0
+contentContainer.Parent = mainFrame
+
+local contentCorner = Instance.new("UICorner")
+contentCorner.CornerRadius = UDim.new(0, 8)
+contentCorner.Parent = contentContainer
+
+-- Create tab pages
+local tabPages = {}
+local activeTab = nil
+local tabs = {
+    {name = "Give", color = Color3.fromRGB(85, 170, 255)},
+    {name = "Stats", color = Color3.fromRGB(255, 85, 255)},
+    {name = "Currency", color = Color3.fromRGB(255, 170, 0)},
+    {name = "Combat", color = Color3.fromRGB(255, 85, 85)},
+    {name = "Teleport", color = Color3.fromRGB(85, 255, 127)},
+    {name = "Player", color = Color3.fromRGB(170, 170, 255)},
+    {name = "Favorites", color = Color3.fromRGB(255, 223, 85)},
+    {name = "Other", color = Color3.fromRGB(170, 170, 170)}
+}
+
+-- Favorites system
+local favorites = {}
+local function toggleFavorite(remote)
+    local id = remote:GetFullName()
+    if favorites[id] then
+        favorites[id] = nil
+    else
+        favorites[id] = remote
+    end
+    updateFavorites()
+end
+
+local function updateFavorites()
+    local favoritesPage = tabPages["favorites"].page
+    for _, child in ipairs(favoritesPage:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+    for _, remote in pairs(favorites) do
+        addRemote(remote, true)
+    end
+end
+
+-- Preset arguments for common remote types
+local presetArgs = {
+    Give = {"amount", "itemName", "quantity", "1", "true"},
+    Stats = {"value", "amount", "10", "100", "max"},
+    Currency = {"amount", "1000", "10000", "100000"},
+    Combat = {"damage", "100", "weapon", "true"},
+    Teleport = {"position", "place", "location", "spawn"},
+    Player = {"name", "value", "setting", "true", "false"}
+}
+
+for _, tabInfo in ipairs(tabs) do
+    -- Create tab button
+    local tabButton = Instance.new("TextButton")
+    tabButton.Size = UDim2.new(0, 100, 1, -10)
+    tabButton.Position = UDim2.new(0, 5, 0, 5)
+    tabButton.BackgroundColor3 = tabInfo.color
+    tabButton.BackgroundTransparency = 0.5
+    tabButton.Text = tabInfo.name
+    tabButton.TextColor3 = Color3.new(1, 1, 1)
+    tabButton.Font = Enum.Font.GothamBold
+    tabButton.TextSize = 14
+    tabButton.Parent = tabContainer
+    
+    local tabButtonCorner = Instance.new("UICorner")
+    tabButtonCorner.CornerRadius = UDim.new(0, 6)
+    tabButtonCorner.Parent = tabButton
+    
+    -- Create content page
+    local contentPage = Instance.new("ScrollingFrame")
+    contentPage.Size = UDim2.new(1, -10, 1, -10)
+    contentPage.Position = UDim2.new(0, 5, 0, 5)
+    contentPage.BackgroundTransparency = 1
+    contentPage.BorderSizePixel = 0
+    contentPage.ScrollBarThickness = 6
+    contentPage.Visible = false
+    contentPage.Parent = contentContainer
+    
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.Padding = UDim.new(0, 5)
+    contentLayout.Parent = contentPage
+    
+    tabPages[tabInfo.name:lower()] = {
+        button = tabButton,
+        page = contentPage,
+        layout = contentLayout
+    }
+    
+    -- Tab button click handler
+    tabButton.MouseButton1Click:Connect(function()
+        if activeTab then
+            activeTab.button.BackgroundTransparency = 0.5
+            activeTab.page.Visible = false
+        end
+        activeTab = tabPages[tabInfo.name:lower()]
+        activeTab.button.BackgroundTransparency = 0
+        activeTab.page.Visible = true
+    end)
+end
+
+-- Set initial active tab
+activeTab = tabPages["give"]
+activeTab.button.BackgroundTransparency = 0
+activeTab.page.Visible = true
+
+--// Enhanced keyword detection with categories
+local keywords = {
+    give = {
+        "Give", "Add", "Reward", "Grant", "Create", "Spawn", "Generate", "Award", "Gift",
+        "Present", "Bonus", "Prize", "Drop", "Obtain", "Collect", "Get", "Item", "Equip",
+        "Tool", "Gear", "Package", "Box", "Crate", "Supply", "Inventory", "Backpack",
+        "Reward", "Loot", "Chest", "Kit", "Pack", "Bundle", "Unlock", "Achievement"
+    },
+    stats = {
+        "Stat", "Stats", "XP", "Exp", "Experience", "Level", "Lvl", "Points", "Score", 
+        "Upgrade", "Update", "Change", "Modify", "Set", "Boost", "Progress",
+        "Speed", "Jump", "Health", "Power", "Strength", "Ability", "Skill", "Talent",
+        "Attribute", "Property", "Value", "Rating", "Rank", "Grade", "Tier", "Class",
+        "Mastery", "Proficiency", "Expertise", "Training", "Performance", "Capability"
+    },
+    currency = {
+        "Coins", "Cash", "Money", "Gold", "Silver", "Credits", "Gems", "Diamonds", 
+        "Tokens", "Currency", "Wallet", "Bank", "Purchase", "Buy", "Sell", "Trade",
+        "Robux", "Bucks", "Dollars", "Premium", "VIP", "Balance", "Points", "Stars",
+        "Crystal", "Pearl", "Ruby", "Emerald", "Sapphire", "Stone", "Jewel", "Resource",
+        "Exchange", "Market", "Shop", "Store", "Price", "Cost", "Worth", "Value"
+    },
+    combat = {
+        "Health", "HP", "Damage", "Attack", "Defense", "Strength", "Power", "Kill",
+        "Death", "Weapon", "Armor", "Shield", "Combat", "Fight", "Battle", "War",
+        "Energy", "Mana", "Stamina", "Rage", "Magic", "Spell", "Skill", "Hit",
+        "Critical", "Block", "Parry", "Dodge", "Evade", "Strike", "Slash", "Pierce",
+        "Stab", "Shoot", "Fire", "Launch", "Throw", "Cast", "Ability", "Ultimate",
+        "Special", "Combo", "Chain", "Multiplier", "Buff", "Debuff", "Status", "Effect"
+    },
+    teleport = {
+        "Teleport", "TP", "Warp", "Travel", "Move", "Goto", "Location", "Place",
+        "Area", "Zone", "Region", "Spawn", "Position", "Portal", "Transport",
+        "Destination", "Point", "Checkpoint", "Waypoint", "Marker", "Site", "Spot",
+        "Map", "World", "Realm", "Dimension", "Universe", "Space", "Room", "Chamber",
+        "Hall", "Corridor", "Path", "Route", "Track", "Trail", "Bridge", "Gate"
+    },
+    player = {
+        "Player", "Character", "User", "Client", "Local", "Account", "Profile",
+        "Save", "Load", "Data", "Stats", "Info", "Settings", "Config", "Preferences",
+        "Options", "Menu", "Interface", "GUI", "HUD", "Display", "Screen", "View",
+        "Camera", "Perspective", "Angle", "Direction", "Orientation", "Position",
+        "Transform", "State", "Mode", "Status", "Condition", "Appearance", "Look"
+    },
+    gamemode = {
+        "Game", "Mode", "Round", "Match", "Event", "Quest", "Mission", "Task",
+        "Challenge", "Trial", "Test", "Stage", "Phase", "Level", "Difficulty",
+        "Setting", "Rule", "Condition", "State", "Status", "Progress", "Start",
+        "End", "Finish", "Complete", "Win", "Lose", "Draw", "Tie", "Score"
+    }
+}
+
+-- Path-based categorization
+local pathKeywords = {
+    give = {
+        "Giver", "Rewards", "Items", "Inventory", "Collect", "Loot", "Drop", "Spawn",
+        "Equipment", "Gear", "Tools", "Weapons", "Supplies", "Resources", "Assets"
+    },
+    stats = {
+        "Stats", "Skills", "Attributes", "Properties", "Status", "Levels", "Experience",
+        "Progress", "Achievements", "Rankings", "Leaderboard", "Performance", "Analytics"
+    },
+    currency = {
+        "Shop", "Store", "Market", "Economy", "Trading", "Exchange", "Bank", "Wallet",
+        "Purchase", "Transaction", "Payment", "Premium", "VIP", "Membership"
+    },
+    combat = {
+        "Combat", "Battle", "Fighting", "PvP", "Weapons", "Arena", "Battlefield",
+        "Warzone", "Duel", "Match", "Tournament", "Competition", "Challenge"
+    },
+    teleport = {
+        "Teleport", "Transport", "Travel", "Locations", "Waypoints", "Destinations",
+        "Maps", "Worlds", "Areas", "Zones", "Regions", "Places", "Spots"
+    },
+    player = {
+        "Player", "Character", "User", "Profile", "Account", "Data", "Progress",
+        "Statistics", "Settings", "Preferences", "Configuration", "State"
+    },
+    gamemode = {
+        "GameMode", "Rounds", "Matches", "Events", "Missions", "Quests", "Tasks",
+        "Challenges", "Stages", "Phases", "Levels", "Difficulties"
+    }
+}
+
+local function getRemoteCategory(remote)
+    local fullPath = remote:GetFullName():lower()
+    local name = remote.Name:lower()
+    
+    -- First check path-based categorization
+    for category, paths in pairs(pathKeywords) do
+        for _, path in ipairs(paths) do
+            if string.find(fullPath, path:lower()) then
+                return category
+            end
+        end
+    end
+    
+    -- Then check name-based keywords
+    for category, keywordList in pairs(keywords) do
+        for _, keyword in ipairs(keywordList) do
+            if string.find(name, keyword:lower()) then
+                return category
+            end
+        end
+    end
+    
+    return "other"
+end
+
+--// Parse argument input into Lua values
+local function parseArgs(argText)
+    if argText == "" then return {} end
+    
+    local success, args = pcall(function()
+        return loadstring("return {" .. argText .. "}")()
+    end)
+    return success and args or {}
+end
+
+--// Add remote to UI with enhanced styling
+local function addRemote(remote, isFavorite)
+    local category = isFavorite and "favorites" or getRemoteCategory(remote)
+    local tabPage = tabPages[category]
+    
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -10, 0, 80)
+    container.BorderSizePixel = 0
+    container.Name = remote.Name
+    container.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    container.Parent = tabPage.page
+    
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 6)
+    containerCorner.Parent = container
+    
+    -- Remote name label
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(0.6, 0, 0.4, 0)
+    nameLabel.Position = UDim2.new(0, 10, 0, 5)
+    nameLabel.Text = remote.Name
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 14
+    nameLabel.TextWrapped = true
+    nameLabel.Parent = container
+    
+    -- Path label with copy button
+    local pathLabel = Instance.new("TextLabel")
+    pathLabel.Size = UDim2.new(0.6, 0, 0.3, 0)
+    pathLabel.Position = UDim2.new(0, 10, 0.4, 0)
+    local fullPath = remote:GetFullName()
+    pathLabel.Text = fullPath:gsub(remote.Name .. "$", "")
+    pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    pathLabel.BackgroundTransparency = 1
+    pathLabel.TextXAlignment = Enum.TextXAlignment.Left
+    pathLabel.Font = Enum.Font.Gotham
+    pathLabel.TextSize = 10
+    pathLabel.TextWrapped = true
+    pathLabel.Parent = container
+    
+    -- Add copy button for the remote path
+    createCopyButton(container, fullPath)
+
+    -- Type indicator with enhanced styling
+    local typeLabel = Instance.new("TextLabel")
+    typeLabel.Size = UDim2.new(0.15, 0, 0.3, 0)
+    typeLabel.Position = UDim2.new(0.65, 0, 0.1, 0)
+    local isEvent = remote:IsA("RemoteEvent")
+    typeLabel.Text = isEvent and "EVENT" or "FUNCTION"
+    typeLabel.BackgroundColor3 = isEvent and Color3.fromRGB(100, 200, 100) or Color3.fromRGB(200, 100, 200)
+    typeLabel.TextColor3 = Color3.new(1, 1, 1)
+    typeLabel.Font = Enum.Font.GothamBold
+    typeLabel.TextSize = 10
+    typeLabel.TextXAlignment = Enum.TextXAlignment.Center
+    typeLabel.Parent = container
+    
+    local typeCorner = Instance.new("UICorner")
+    typeCorner.CornerRadius = UDim.new(0, 3)
+    typeCorner.Parent = typeLabel
+
+    -- Status indicator for last execution
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(0.15, 0, 0.2, 0)
+    statusLabel.Position = UDim2.new(0.65, 0, 0.45, 0)
+    statusLabel.Text = ""
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextSize = 10
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+    statusLabel.Parent = container
+
+    -- Arguments input with auto-complete
+    local argsInput = Instance.new("TextBox")
+    argsInput.Size = UDim2.new(0.7, 0, 0.3, 0)
+    argsInput.Position = UDim2.new(0, 10, 0.65, 0)
+    argsInput.PlaceholderText = "Arguments (e.g., \"value\", 100, true)"
+    argsInput.Text = ""
+    argsInput.TextColor3 = Color3.new(1, 1, 1)
+    argsInput.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    argsInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+    argsInput.Font = Enum.Font.Gotham
+    argsInput.TextSize = 12
+    argsInput.Parent = container
+    
+    local argsCorner = Instance.new("UICorner")
+    argsCorner.CornerRadius = UDim.new(0, 4)
+    argsCorner.Parent = argsInput
+
+    -- Error display
+    local errorLabel = Instance.new("TextLabel")
+    errorLabel.Size = UDim2.new(0.7, 0, 0, 0)
+    errorLabel.Position = UDim2.new(0, 10, 0.95, 0)
+    errorLabel.Text = ""
+    errorLabel.BackgroundTransparency = 1
+    errorLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    errorLabel.Font = Enum.Font.Gotham
+    errorLabel.TextSize = 10
+    errorLabel.TextXAlignment = Enum.TextXAlignment.Left
+    errorLabel.Visible = false
+    errorLabel.Parent = container
+
+    -- Preset arguments dropdown
+    local presetButton = Instance.new("TextButton")
+    presetButton.Size = UDim2.new(0.15, 0, 0.3, 0)
+    presetButton.Position = UDim2.new(0.72, 0, 0.65, 0)
+    presetButton.Text = "📝"
+    presetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    presetButton.TextColor3 = Color3.new(1, 1, 1)
+    presetButton.Font = Enum.Font.GothamBold
+    presetButton.TextSize = 14
+    presetButton.Parent = container
+    
+    local presetCorner = Instance.new("UICorner")
+    presetCorner.CornerRadius = UDim.new(0, 4)
+    presetCorner.Parent = presetButton
+
+    -- Favorite button with enhanced feedback
+    local favButton = Instance.new("TextButton")
+    favButton.Size = UDim2.new(0.1, 0, 0.3, 0)
+    favButton.Position = UDim2.new(0.88, 0, 0.1, 0)
+    favButton.Text = favorites[remote:GetFullName()] and "⭐" or "☆"
+    favButton.BackgroundTransparency = 1
+    favButton.TextColor3 = Color3.fromRGB(255, 223, 85)
+    favButton.Font = Enum.Font.GothamBold
+    favButton.TextSize = 20
+    favButton.Parent = container
+
+    favButton.MouseButton1Click:Connect(function()
+        toggleFavorite(remote)
+        favButton.Text = favorites[remote:GetFullName()] and "⭐" or "☆"
+        -- Add visual feedback
+        local originalColor = favButton.TextColor3
+        favButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        wait(0.2)
+        favButton.TextColor3 = originalColor
+    end)
+
+    -- Execute button with loading state
+    local runButton = Instance.new("TextButton")
+    runButton.Size = UDim2.new(0.15, 0, 0.3, 0)
+    runButton.Position = UDim2.new(0.83, 0, 0.65, 0)
+    runButton.Text = "EXECUTE"
+    runButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    runButton.TextColor3 = Color3.new(1, 1, 1)
+    runButton.Font = Enum.Font.GothamBold
+    runButton.TextSize = 12
+    runButton.Parent = container
+    
+    local runCorner = Instance.new("UICorner")
+    runCorner.CornerRadius = UDim.new(0, 4)
+    runCorner.Parent = runButton
+
+    -- Enhanced preset menu with categories
+    local presetMenu = nil
+    presetButton.MouseButton1Click:Connect(function()
+        if presetMenu then
+            presetMenu:Destroy()
+            presetMenu = nil
+            return
+        end
+        
+        presetMenu = Instance.new("Frame")
+        presetMenu.Size = UDim2.new(0, 150, 0, 200)
+        presetMenu.Position = UDim2.new(0.72, 0, 0.95, 0)
+        presetMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        presetMenu.BorderSizePixel = 0
+        presetMenu.ZIndex = 10
+        presetMenu.Parent = container
+        
+        local menuCorner = Instance.new("UICorner")
+        menuCorner.CornerRadius = UDim.new(0, 6)
+        menuCorner.Parent = presetMenu
+        
+        local menuLayout = Instance.new("UIListLayout")
+        menuLayout.Padding = UDim.new(0, 5)
+        menuLayout.Parent = presetMenu
+
+        -- Add category labels and presets
+        local categoryPresets = enhancedPresets[category:sub(1,1):upper() .. category:sub(2)] or enhancedPresets["Other"] or {}
+        for label, values in pairs(categoryPresets) do
+            local categoryLabel = Instance.new("TextLabel")
+            categoryLabel.Size = UDim2.new(1, -10, 0, 20)
+            categoryLabel.Position = UDim2.new(0, 5, 0, 0)
+            categoryLabel.Text = label:upper()
+            categoryLabel.BackgroundTransparency = 1
+            categoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+            categoryLabel.Font = Enum.Font.GothamBold
+            categoryLabel.TextSize = 10
+            categoryLabel.Parent = presetMenu
+
+            for _, value in ipairs(values) do
+                local presetItem = Instance.new("TextButton")
+                presetItem.Size = UDim2.new(1, -10, 0, 25)
+                presetItem.Position = UDim2.new(0, 5, 0, 0)
+                presetItem.Text = tostring(value)
+                presetItem.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+                presetItem.TextColor3 = Color3.new(1, 1, 1)
+                presetItem.Font = Enum.Font.Gotham
+                presetItem.TextSize = 12
+                presetItem.Parent = presetMenu
+                
+                local itemCorner = Instance.new("UICorner")
+                itemCorner.CornerRadius = UDim.new(0, 4)
+                itemCorner.Parent = presetItem
+                
+                presetItem.MouseButton1Click:Connect(function()
+                    local currentText = argsInput.Text
+                    if currentText == "" then
+                        argsInput.Text = tostring(value)
+                    else
+                        argsInput.Text = currentText .. ", " .. tostring(value)
+                    end
+                    presetMenu:Destroy()
+                    presetMenu = nil
+                end)
+            end
+        end
+    end)
+
+    -- Hover effects
+    runButton.MouseEnter:Connect(function()
+        TweenService:Create(runButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(70, 220, 70)}):Play()
+    end)
+    
+    runButton.MouseLeave:Connect(function()
+        TweenService:Create(runButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 200, 50)}):Play()
+    end)
+
+    -- Enhanced remote execution with error handling
+    runButton.MouseButton1Click:Connect(function()
+        -- Clear previous error
+        errorLabel.Visible = false
+        
+        -- Parse and validate arguments
+        local rawArgs = parseArgs(argsInput.Text)
+        local args = validateArgs(rawArgs)
+        
+        -- Visual feedback - loading state
+        local originalText = runButton.Text
+        runButton.Text = "⌛"
+        
+        local success, result = pcall(function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(unpack(args))
+                return "Event fired successfully"
+            elseif remote:IsA("RemoteFunction") then
+                return remote:InvokeServer(unpack(args))
+            end
+        end)
+
+        if success then
+            -- Log successful execution
+            logRemoteExecution(remote, args, true, result)
+            
+            -- Update status
+            statusLabel.Text = "Last: Success"
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+            
+            -- Visual feedback
+            runButton.Text = "✅"
+            wait(1)
+            runButton.Text = originalText
+        else
+            -- Handle error
+            local errorMsg = handleRemoteError(remote, tostring(result))
+            
+            -- Log failed execution
+            logRemoteExecution(remote, args, false, errorMsg)
+            
+            -- Show error
+            errorLabel.Text = errorMsg
+            errorLabel.Visible = true
+            
+            -- Update status
+            statusLabel.Text = "Last: Failed"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            
+            -- Visual feedback
+            runButton.Text = "❌"
+            wait(1)
+            runButton.Text = originalText
+        end
+    end)
+    
+    -- Update canvas size
+    tabPage.page.CanvasSize = UDim2.new(0, 0, 0, tabPage.layout.AbsoluteContentSize.Y + 10)
+end
+
+-- Add remote history logging
+local remoteHistory = {}
+local maxHistorySize = 50
+
+local function logRemoteExecution(remote, args, success, result)
+    table.insert(remoteHistory, 1, {
+        remote = remote,
+        args = args,
+        success = success,
+        result = result,
+        timestamp = os.time()
+    })
+    if #remoteHistory > maxHistorySize then
+        table.remove(remoteHistory)
+    end
+end
+
+-- Copy path button functionality
+local function createCopyButton(container, text)
+    local copyButton = Instance.new("TextButton")
+    copyButton.Size = UDim2.new(0.1, 0, 0.3, 0)
+    copyButton.Position = UDim2.new(0.77, 0, 0.1, 0)
+    copyButton.Text = "📋"
+    copyButton.BackgroundTransparency = 1
+    copyButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+    copyButton.Font = Enum.Font.GothamBold
+    copyButton.TextSize = 16
+    copyButton.Parent = container
+    
+    copyButton.MouseButton1Click:Connect(function()
+        setclipboard(text)
+        copyButton.Text = "✓"
+        copyButton.TextColor3 = Color3.fromRGB(50, 200, 50)
+        wait(1)
+        copyButton.Text = "📋"
+        copyButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end)
+end
+
+-- Enhanced error handling
+local function handleRemoteError(remote, error)
+    local errorTypes = {
+        ["timeout"] = "Remote call timed out. The server might be busy.",
+        ["permission"] = "Permission denied. You might not have access to this remote.",
+        ["argument"] = "Invalid arguments provided.",
+        ["network"] = "Network error. Check your connection.",
+    }
+    
+    local errorMsg = "Unknown error"
+    for pattern, msg in pairs(errorTypes) do
+        if string.find(string.lower(error), pattern) then
+            errorMsg = msg
+            break
+        end
+    end
+    
+    warn("❌ Error with remote '" .. remote.Name .. "': " .. errorMsg)
+    return errorMsg
+end
+
+-- Argument validation
+local function validateArgs(args)
+    local validatedArgs = {}
+    for i, arg in ipairs(args) do
+        -- Convert string numbers to actual numbers
+        if type(arg) == "string" and tonumber(arg) then
+            arg = tonumber(arg)
+        end
+        -- Handle boolean strings
+        if type(arg) == "string" and (arg:lower() == "true" or arg:lower() == "false") then
+            arg = arg:lower() == "true"
+        end
+        validatedArgs[i] = arg
+    end
+    return validatedArgs
+end
+
+-- Enhanced preset system with common game values
+local enhancedPresets = {
+    Give = {
+        values = {"1", "10", "100", "1000", "max", "all"},
+        items = {"Coin", "Gem", "XP", "Level", "Power", "Energy"},
+        states = {"true", "false", "yes", "no", "on", "off"}
+    },
+    Stats = {
+        multipliers = {"1", "2", "5", "10", "100"},
+        levels = {"1", "10", "50", "100", "max"},
+        states = {"enabled", "disabled", "locked", "unlocked"}
+    },
+    Currency = {
+        amounts = {"100", "1000", "10000", "100000", "1000000"},
+        multipliers = {"2x", "5x", "10x", "100x"},
+        special = {"vip", "premium", "bonus", "super"}
+    }
+}
+
+-- Add to presetArgs
+for category, values in pairs(enhancedPresets) do
+    if not presetArgs[category] then
+        presetArgs[category] = {}
+    end
+    for _, valueSet in pairs(values) do
+        for _, value in ipairs(valueSet) do
+            table.insert(presetArgs[category], value)
+        end
+    end
+end
+
+-- Search functionality
+searchBar:GetPropertyChangedSignal("Text"):Connect(function()
+    local searchText = searchBar.Text:lower()
+    for _, tabInfo in pairs(tabPages) do
+        for _, child in ipairs(tabInfo.page:GetChildren()) do
+            if child:IsA("Frame") then
+                local nameLabel = child:FindFirstChild("TextLabel")
+                if nameLabel then
+                    local name = nameLabel.Text:lower()
+                    child.Visible = searchText == "" or string.find(name, searchText)
+                end
+            end
+        end
+    end
+end)
+
+-- Close button functionality
+closeButton.MouseButton1Click:Connect(function()
+    local tween = TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 0, 0, 0)})
+    tween:Play()
+    tween.Completed:Connect(function()
+        screenGui:Destroy()
+    end)
+end)
+
+-- Make draggable
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+--// Start scanning
+title.Text = "🔄 Scanning game..."
+wait(0.5)
+scan(game.ReplicatedStorage)
+scan(game.Workspace)
+scan(game:GetService("StarterGui"))
+scan(game:GetService("StarterPlayer"))
+
+title.Text = "🎮 Game Mod Menu"
+print("🎮 Game Mod Menu loaded successfully!")
+
+--// Scan for remotes
+local function scan(container)
+    for _, obj in ipairs(container:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            addRemote(obj)
+        end
+    end
+    container.DescendantAdded:Connect(function(obj)
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            addRemote(obj)
+        end
+    end)
+end
