@@ -107,12 +107,14 @@ local searchCorner = Instance.new("UICorner")
 searchCorner.CornerRadius = UDim.new(0, 6)
 searchCorner.Parent = searchBar
 
--- Create tab system
-local tabContainer = Instance.new("Frame")
+-- Create tab system with scrolling
+local tabContainer = Instance.new("ScrollingFrame")
 tabContainer.Size = UDim2.new(1, -20, 0, 40)
 tabContainer.Position = UDim2.new(0, 10, 0, 60)
 tabContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
 tabContainer.BorderSizePixel = 0
+tabContainer.ScrollBarThickness = 4
+tabContainer.ScrollingDirection = Enum.ScrollingDirection.X
 tabContainer.Parent = mainFrame
 
 local tabCorner = Instance.new("UICorner")
@@ -123,6 +125,11 @@ local tabLayout = Instance.new("UIListLayout")
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.Padding = UDim.new(0, 5)
 tabLayout.Parent = tabContainer
+
+-- Update canvas size when tabs are added
+tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    tabContainer.CanvasSize = UDim2.new(0, tabLayout.AbsoluteContentSize.X + 10, 0, 0)
+end)
 
 -- Content container for each tab
 local contentContainer = Instance.new("Frame")
@@ -136,7 +143,7 @@ local contentCorner = Instance.new("UICorner")
 contentCorner.CornerRadius = UDim.new(0, 8)
 contentCorner.Parent = contentContainer
 
--- Create tab pages
+-- Create tab pages with improved layout
 local tabPages = {}
 local activeTab = nil
 local tabs = {
@@ -150,42 +157,8 @@ local tabs = {
     {name = "Other", color = Color3.fromRGB(170, 170, 170)}
 }
 
--- Favorites system
-local favorites = {}
-local function toggleFavorite(remote)
-    local id = remote:GetFullName()
-    if favorites[id] then
-        favorites[id] = nil
-    else
-        favorites[id] = remote
-    end
-    updateFavorites()
-end
-
-local function updateFavorites()
-    local favoritesPage = tabPages["favorites"].page
-    for _, child in ipairs(favoritesPage:GetChildren()) do
-        if child:IsA("Frame") then
-            child:Destroy()
-        end
-    end
-    for _, remote in pairs(favorites) do
-        addRemote(remote, true)
-    end
-end
-
--- Preset arguments for common remote types
-local presetArgs = {
-    Give = {"amount", "itemName", "quantity", "1", "true"},
-    Stats = {"value", "amount", "10", "100", "max"},
-    Currency = {"amount", "1000", "10000", "100000"},
-    Combat = {"damage", "100", "weapon", "true"},
-    Teleport = {"position", "place", "location", "spawn"},
-    Player = {"name", "value", "setting", "true", "false"}
-}
-
 for _, tabInfo in ipairs(tabs) do
-    -- Create tab button
+    -- Create tab button with fixed width
     local tabButton = Instance.new("TextButton")
     tabButton.Size = UDim2.new(0, 100, 1, -10)
     tabButton.Position = UDim2.new(0, 5, 0, 5)
@@ -201,7 +174,7 @@ for _, tabInfo in ipairs(tabs) do
     tabButtonCorner.CornerRadius = UDim.new(0, 6)
     tabButtonCorner.Parent = tabButton
     
-    -- Create content page
+    -- Create content page with auto-sizing
     local contentPage = Instance.new("ScrollingFrame")
     contentPage.Size = UDim2.new(1, -10, 1, -10)
     contentPage.Position = UDim2.new(0, 5, 0, 5)
@@ -215,13 +188,18 @@ for _, tabInfo in ipairs(tabs) do
     contentLayout.Padding = UDim.new(0, 5)
     contentLayout.Parent = contentPage
     
+    -- Auto-update content size
+    contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        contentPage.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
+    end)
+    
     tabPages[tabInfo.name:lower()] = {
         button = tabButton,
         page = contentPage,
         layout = contentLayout
     }
     
-    -- Tab button click handler
+    -- Tab button click handler with visual feedback
     tabButton.MouseButton1Click:Connect(function()
         if activeTab then
             activeTab.button.BackgroundTransparency = 0.5
@@ -230,6 +208,16 @@ for _, tabInfo in ipairs(tabs) do
         activeTab = tabPages[tabInfo.name:lower()]
         activeTab.button.BackgroundTransparency = 0
         activeTab.page.Visible = true
+        
+        -- Visual feedback
+        local originalColor = tabButton.BackgroundColor3
+        tabButton.BackgroundColor3 = Color3.new(
+            math.min(1, originalColor.R * 1.2),
+            math.min(1, originalColor.G * 1.2),
+            math.min(1, originalColor.B * 1.2)
+        )
+        wait(0.2)
+        tabButton.BackgroundColor3 = originalColor
     end)
 end
 
@@ -357,26 +345,40 @@ local function parseArgs(argText)
     return success and args or {}
 end
 
---// Add remote to UI with enhanced styling (fixed version)
+--// Add remote to UI with enhanced styling and error handling
 local function addRemote(remote)
-    if not remote or not remote.Parent then return end
+    -- Validate remote
+    if not remote or typeof(remote) ~= "Instance" or not remote.Parent then
+        warn("Invalid remote object provided to addRemote")
+        return
+    end
     
     -- Ensure we have a valid category
-    local category = (type(remote) == "userdata" and remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction"))
-        and getRemoteCategory(remote) or "other"
+    local category = "other"
+    if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
+        category = getRemoteCategory(remote)
+    else
+        warn("Invalid remote type provided to addRemote")
+        return
+    end
     
     local tabPage = tabPages[category:lower()]
-    if not tabPage then return end
-    
+    if not tabPage or not tabPage.page then
+        warn("Invalid tab page for category: " .. category)
+        return
+    end
+
+    -- Create container with error protection
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, -10, 0, 70)  -- Reduced height
+    container.Size = UDim2.new(1, -10, 0, 70)
     container.BorderSizePixel = 0
     container.Name = remote.Name
     container.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    container.Parent = tabPage.page
-    
-    -- Protection against errors
+
+    -- Protect the entire UI creation process
     local success, err = pcall(function()
+        container.Parent = tabPage.page
+        
         local containerCorner = Instance.new("UICorner")
         containerCorner.CornerRadius = UDim.new(0, 6)
         containerCorner.Parent = container
@@ -659,16 +661,24 @@ local function addRemote(remote)
         end)
         
         -- Update canvas size with error protection
-        task.spawn(function()
-            if tabPage and tabPage.page and tabPage.layout then
-                tabPage.page.CanvasSize = UDim2.new(0, 0, 0, tabPage.layout.AbsoluteContentSize.Y + 10)
+        if tabPage and tabPage.page and tabPage.layout then
+            local success, err = pcall(function()
+                local contentSize = tabPage.layout.AbsoluteContentSize
+                if contentSize then
+                    tabPage.page.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
+                end
+            end)
+            if not success then
+                warn("Failed to update canvas size: " .. tostring(err))
             end
-        end)
+        end
     end)
     
     if not success then
         warn("Failed to create remote UI for: " .. remote.Name .. " - " .. tostring(err))
-        if container then container:Destroy() end
+        if container and container.Parent then
+            container:Destroy()
+        end
     end
 end
 
@@ -837,54 +847,89 @@ end)
 
 --// Scan for remotes (fixed version)
 local function scan(container)
-    if not container then return end
+    if not container or typeof(container) ~= "Instance" then
+        warn("Invalid container provided to scan function")
+        return
+    end
     
     local function addRemoteIfValid(obj)
-        if obj and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
-            task.spawn(function()
-                addRemote(obj)
-            end)
+        if not obj or not obj.Parent then return end
+        
+        local success, err = pcall(function()
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                task.spawn(function()
+                    addRemote(obj)
+                end)
+            end
+        end)
+        
+        if not success then
+            warn("Failed to process remote: " .. obj:GetFullName() .. " - " .. tostring(err))
         end
     end
     
-    -- Scan existing objects
-    for _, obj in ipairs(container:GetDescendants()) do
-        addRemoteIfValid(obj)
+    -- Scan existing objects with error handling
+    local success, err = pcall(function()
+        for _, obj in ipairs(container:GetDescendants()) do
+            addRemoteIfValid(obj)
+        end
+    end)
+    
+    if not success then
+        warn("Failed to scan container: " .. container:GetFullName() .. " - " .. tostring(err))
     end
     
-    -- Watch for new objects
-    container.DescendantAdded:Connect(addRemoteIfValid)
+    -- Watch for new objects with error handling
+    container.DescendantAdded:Connect(function(obj)
+        addRemoteIfValid(obj)
+    end)
 end
 
--- Start scanning with proper error handling
+-- Start scanning with proper error handling and status updates
 title.Text = "🔄 Scanning game..."
 
 local function scanGame()
-    local success = pcall(function()
-        -- Scan main locations
-        scan(game:GetService("ReplicatedStorage"))
-        scan(game:GetService("StarterGui"))
-        scan(game:GetService("StarterPlayer"))
-        scan(game:GetService("Workspace"))
-        
-        -- Additional scanning for common remote locations
-        local success, result = pcall(function()
-            scan(game:GetService("ReplicatedFirst"))
-            scan(game:GetService("StarterPack"))
-        end)
-    end)
+    local scanLocations = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("StarterGui"),
+        game:GetService("StarterPlayer"),
+        game:GetService("Workspace"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("StarterPack")
+    }
     
-    if success then
+    local successCount = 0
+    for _, location in ipairs(scanLocations) do
+        local success = pcall(function()
+            if location then
+                scan(location)
+                successCount = successCount + 1
+            end
+        end)
+        
+        if not success then
+            warn("Failed to scan location: " .. location.Name)
+        end
+    end
+    
+    -- Update title based on scan results
+    if successCount == #scanLocations then
         title.Text = "🎮 Game Mod Menu"
-        print("🎮 Game Mod Menu loaded successfully!")
+        print("✅ Game Mod Menu loaded successfully!")
     else
         title.Text = "🎮 Game Mod Menu (Partial Scan)"
-        warn("Some remotes might not have been detected.")
+        warn("⚠️ Some locations could not be scanned (" .. successCount .. "/" .. #scanLocations .. " successful)")
     end
 end
 
--- Run scanning in a separate thread
-task.spawn(scanGame)
+-- Run scanning in protected thread
+task.spawn(function()
+    local success, err = pcall(scanGame)
+    if not success then
+        warn("❌ Critical error during scanning: " .. tostring(err))
+        title.Text = "🎮 Game Mod Menu (Error)"
+    end
+end)
 
 -- Make draggable
 local dragging = false
