@@ -1,21 +1,38 @@
---// Services
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local function InitializeScript()
+    --// Services
+    local Players = game:GetService("Players")
+    local TweenService = game:GetService("TweenService")
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
 
--- Wait for player
-local player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    -- Make sure we're running on the client
+    if not RunService:IsClient() then return end
 
--- Make sure we're running on the client
-if not RunService:IsClient() then return end
+    -- Wait for player to load
+    local player
+    if not Players.LocalPlayer then
+        player = Players.LocalPlayer
+        while not player do
+            task.wait()
+            player = Players.LocalPlayer
+        end
+    else
+        player = Players.LocalPlayer
+    end
 
---// GUI Setup
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "GameModMenu"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = player:WaitForChild("PlayerGui")
+    --// GUI Setup
+    if not player.PlayerGui then return end
+    
+    -- Remove any existing GUI with the same name
+    local existing = player.PlayerGui:FindFirstChild("GameModMenu")
+    if existing then existing:Destroy() end
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "GameModMenu"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.DisplayOrder = 999999999
+    screenGui.Parent = player.PlayerGui
 
 -- Main Frame with enhanced mobile-first design
 local mainFrame = Instance.new("Frame")
@@ -211,10 +228,10 @@ local contentCorner = Instance.new("UICorner")
 contentCorner.CornerRadius = UDim.new(0, 8)
 contentCorner.Parent = contentContainer
 
--- Create tab pages with improved layout
-local tabPages = {}
-local activeTab = nil
-local tabs = {
+    -- Create tab pages with improved layout
+    local tabPages = {}
+    local activeTab = nil
+    local tabs = {
     {name = "Give", color = Color3.fromRGB(85, 170, 255)},
     {name = "Stats", color = Color3.fromRGB(255, 85, 255)},
     {name = "Currency", color = Color3.fromRGB(255, 170, 0)},
@@ -1116,10 +1133,12 @@ titleBar.TouchEnded:Connect(endDrag)
 -- Start scanning is now handled by the startScanning function
 -- Remove duplicate scanning calls
 
--- Start scanning with delay to ensure UI is ready
-task.wait(0.1) -- Small delay to ensure UI is fully initialized
-print("Starting initial scan...")
-startScanning()
+    -- Start scanning with delay to ensure UI is ready
+    task.wait(0.1) -- Small delay to ensure UI is fully initialized
+    startScanning()
+end
 
--- Debug message
-print("UI Initialization completed")
+-- Run the initialization
+task.spawn(function()
+    InitializeScript()
+end)
