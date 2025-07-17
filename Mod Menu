@@ -12,7 +12,17 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 -- Main Frame with modern design
-local mainFrame = Instance.new("Frame")
+local mainFrame = Ins--// Execute button with updated text and mobile support
+    local runButton = Instance.new("TextButton")
+    runButton.Size = UDim2.new(0.15, 0, 0.3, 0)
+    runButton.Position = UDim2.new(0.83, 0, 0.65, 0)  -- Aligned with EVENT/FUNCTION label
+    runButton.Text = "RUN"
+    runButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    runButton.TextColor3 = Color3.new(1, 1, 1)
+    runButton.Font = Enum.Font.GothamBold
+    runButton.TextSize = 12
+    runButton.Parent = container
+    runButton.AutoButtonColor = true -- Better visual feedback on mobile"Frame")
 mainFrame.Size = UDim2.new(0, 500, 0, 400)  -- Reduced size
 mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
@@ -402,15 +412,24 @@ local function isPlayerRemote(remote)
     return false
 end
 
---// Add remote to UI (improved version)
+--// Add remote to UI (improved version with better organization)
 local function addRemote(remote)
-    -- Basic validation
-    if not remote or not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then 
-        return 
-    end
+    -- Basic validation with error handling
+    local success, result = pcall(function()
+        if not remote or not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then 
+            return false
+        end
+        
+        -- Only show remotes relevant to the local player
+        if not isPlayerRemote(remote) then
+            return false
+        end
+        
+        return true
+    end)
     
-    -- Only show remotes relevant to the local player
-    if not isPlayerRemote(remote) then
+    if not success or not result then
+        warn("Failed to add remote:", remote and remote:GetFullName() or "nil")
         return
     end
     
@@ -517,19 +536,45 @@ local function addRemote(remote)
     runCorner.CornerRadius = UDim.new(0, 4)
     runCorner.Parent = runButton
 
-    -- Add execute functionality
-    runButton.MouseButton1Click:Connect(function()
-        local args = parseArgs(argsInput.Text)
-        
-        if remote:IsA("RemoteEvent") then
-            remote:FireServer(unpack(args))
-        else
-            local result = remote:InvokeServer(unpack(args))
-            if result then
-                print("Result:", result)
+    -- Add execute functionality with better error handling and mobile support
+    local function executeRemote()
+        local success, result = pcall(function()
+            local args = parseArgs(argsInput.Text)
+            
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(unpack(args))
+                return "Remote event fired successfully"
+            else
+                local result = remote:InvokeServer(unpack(args))
+                return result or "Remote function called successfully"
             end
+        end)
+        
+        if not success then
+            warn("Failed to execute remote:", result)
+            -- Visual feedback for error
+            local originalColor = runButton.BackgroundColor3
+            runButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            task.wait(0.3)
+            runButton.BackgroundColor3 = originalColor
+        else
+            -- Visual feedback for success
+            local originalColor = runButton.BackgroundColor3
+            runButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            task.wait(0.3)
+            runButton.BackgroundColor3 = originalColor
+            print("Success:", result)
         end
-    end)
+    end
+    
+    -- Add both mouse and touch support
+    runButton.MouseButton1Click:Connect(executeRemote)
+    runButton.TouchTap:Connect(executeRemote)
+    
+    -- Make button more touch-friendly if on mobile
+    if UserInputService.TouchEnabled then
+        runButton.Size = UDim2.new(0.2, 0, 0.3, 0) -- Slightly larger touch target
+    end
 
     -- Update content size
     local contentSize = tabPage.layout.AbsoluteContentSize
@@ -589,13 +634,13 @@ closeButton.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Minimize functionality
+-- Minimize functionality with mobile support
 local minimized = false
 local originalSize = mainFrame.Size
 local originalContentSize = contentContainer.Size
 local originalContentPos = contentContainer.Position
 
-minimizeButton.MouseButton1Click:Connect(function()
+local function toggleMinimize()
     minimized = not minimized
     local targetSize = minimized and UDim2.new(0, 500, 0, 40) or originalSize
     local targetContentSize = minimized and UDim2.new(1, -20, 0, 0) or originalContentSize
@@ -608,13 +653,24 @@ minimizeButton.MouseButton1Click:Connect(function()
         Position = targetContentPos
     }):Play()
     
-    -- Update button text
+    -- Update button text and size for mobile
     minimizeButton.Text = minimized and "+" or "─"
     
     -- Hide/Show elements
     tabContainer.Visible = not minimized
     contentContainer.Visible = not minimized
-end)
+end
+
+-- Add both mouse and touch support for minimize button
+minimizeButton.MouseButton1Click:Connect(toggleMinimize)
+minimizeButton.TouchTap:Connect(toggleMinimize)
+
+-- Make minimize button more visible on mobile
+if UserInputService.TouchEnabled then
+    minimizeButton.Size = UDim2.new(0, 40, 0, 30) -- Larger touch target
+    minimizeButton.TextSize = 20 -- Larger text
+    minimizeButton.Position = UDim2.new(1, -80, 0, 5) -- Adjust position
+end
 
 --// Scan for remotes (fixed version)
 local function scan(container)
@@ -702,31 +758,62 @@ task.spawn(function()
     end
 end)
 
--- Make draggable
+-- Make draggable (with mobile support)
 local dragging = false
 local dragStart = nil
 local startPos = nil
+local isMobile = UserInputService.TouchEnabled
 
+local function beginDrag(input)
+    dragging = true
+    dragStart = input.Position
+    startPos = mainFrame.Position
+end
+
+local function updateDrag(input)
+    if dragging then
+        local delta = input.Position - dragStart
+        local newPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        -- Add bounds checking to keep GUI on screen
+        local viewportSize = workspace.CurrentCamera.ViewportSize
+        local frameSize = mainFrame.AbsoluteSize
+        newPosition = UDim2.new(
+            newPosition.X.Scale,
+            math.clamp(newPosition.X.Offset, 0, viewportSize.X - frameSize.X),
+            newPosition.Y.Scale,
+            math.clamp(newPosition.Y.Offset, 0, viewportSize.Y - frameSize.Y)
+        )
+        mainFrame.Position = newPosition
+    end
+end
+
+local function endDrag()
+    dragging = false
+end
+
+-- Mouse support
 titleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
+        beginDrag(input)
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        updateDrag(input)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
+        endDrag()
     end
 end)
+
+-- Touch support
+titleBar.TouchStarted:Connect(beginDrag)
+titleBar.TouchMoved:Connect(updateDrag)
+titleBar.TouchEnded:Connect(endDrag)
 
 --// Start scanning
 title.Text = "🔄 Scanning game..."
