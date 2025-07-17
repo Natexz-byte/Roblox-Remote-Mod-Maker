@@ -4,6 +4,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
+-- Error checking for essential services
+if not player then
+    error("LocalPlayer not found")
+    return
+end
+
 --// GUI Setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GameModMenu"
@@ -12,17 +18,7 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 -- Main Frame with modern design
-local mainFrame = Ins--// Execute button with updated text and mobile support
-    local runButton = Instance.new("TextButton")
-    runButton.Size = UDim2.new(0.15, 0, 0.3, 0)
-    runButton.Position = UDim2.new(0.83, 0, 0.65, 0)  -- Aligned with EVENT/FUNCTION label
-    runButton.Text = "RUN"
-    runButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    runButton.TextColor3 = Color3.new(1, 1, 1)
-    runButton.Font = Enum.Font.GothamBold
-    runButton.TextSize = 12
-    runButton.Parent = container
-    runButton.AutoButtonColor = true -- Better visual feedback on mobile"Frame")
+local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 500, 0, 400)  -- Reduced size
 mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
@@ -357,10 +353,54 @@ end
 local function parseArgs(argText)
     if not argText or argText == "" then return {} end
     
-    -- Basic validation
-    if string.match(argText, "[^%w%s,%.\"'%-_%[%]{}]") then
-        return {}  -- Return empty if suspicious characters found
+    local args = {}
+    local current = ""
+    local inString = false
+    local stringChar = nil
+    
+    -- Simple parser that handles strings and basic types
+    for i = 1, #argText do
+        local char = argText:sub(i, i)
+        if char == '"' or char == "'" then
+            if not inString then
+                inString = true
+                stringChar = char
+            elseif stringChar == char then
+                inString = false
+                table.insert(args, current)
+                current = ""
+            else
+                current = current .. char
+            end
+        elseif char == "," and not inString then
+            if current ~= "" then
+                table.insert(args, current)
+                current = ""
+            end
+        else
+            current = current .. char
+        end
     end
+    
+    if current ~= "" then
+        table.insert(args, current)
+    end
+    
+    -- Process each argument
+    for i, arg in ipairs(args) do
+        arg = arg:match("^%s*(.-)%s*$") -- Trim whitespace
+        if arg:match("^%d+%.?%d*$") then -- Number
+            args[i] = tonumber(arg)
+        elseif arg:lower() == "true" then
+            args[i] = true
+        elseif arg:lower() == "false" then
+            args[i] = false
+        elseif arg:match('^".*"$') or arg:match("^'.*'$") then
+            args[i] = arg:sub(2, -2) -- Remove quotes
+        end
+    end
+    
+    return args
     
     local success, args = pcall(function()
         -- Create a safe wrapper
@@ -602,24 +642,47 @@ local function scan(container)
     end)
 end
 
--- Start scanning process
+-- Start scanning process with improved error handling
 local function startScanning()
+    if not title then
+        warn("Title element not initialized")
+        return
+    end
+
     title.Text = "🔄 Scanning game..."
     
     local locations = {
         game:GetService("ReplicatedStorage"),
         game:GetService("StarterGui"),
         game:GetService("StarterPlayer"),
-        game:GetService("Workspace")
+        game:GetService("Workspace"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("Players").LocalPlayer.PlayerGui
     }
     
+    local successCount = 0
     for _, location in ipairs(locations) do
         if location then
-            scan(location)
+            local success = pcall(function()
+                scan(location)
+                successCount = successCount + 1
+            end)
+            if not success then
+                warn("Failed to scan location:", location.Name)
+            end
         end
     end
     
-    title.Text = "🎮 Game Mod Menu"
+    -- Update title based on scan results
+    if title and title.Parent then
+        if successCount == #locations then
+            title.Text = "🎮 Game Mod Menu"
+            print("✅ Game Mod Menu: All locations scanned successfully")
+        else
+            title.Text = "🎮 Game Mod Menu (Partial Scan)"
+            warn("⚠️ Some locations failed to scan (" .. successCount .. "/" .. #locations .. " successful)")
+        end
+    end
 end
 
 -- Start the scanning process
@@ -826,16 +889,38 @@ scan(game:GetService("StarterPlayer"))
 title.Text = "🎮 Game Mod Menu"
 print("🎮 Game Mod Menu loaded successfully!")
 
---// Scan for remotes
+--// Fixed scanning function with better error handling
 local function scan(container)
-    for _, obj in ipairs(container:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            addRemote(obj)
+    if not container or not container:IsA("Instance") then
+        warn("Invalid container for scanning")
+        return
+    end
+
+    local function processObject(obj)
+        if not obj or not obj:IsA("Instance") then return end
+        
+        local success, err = pcall(function()
+            if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and obj.Parent then
+                addRemote(obj)
+            end
+        end)
+        
+        if not success then
+            warn("Failed to process object:", obj:GetFullName(), err)
         end
     end
-    container.DescendantAdded:Connect(function(obj)
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            addRemote(obj)
+
+    -- Scan existing objects
+    local success, err = pcall(function()
+        for _, obj in ipairs(container:GetDescendants()) do
+            processObject(obj)
         end
     end)
+
+    if not success then
+        warn("Failed to scan container:", container:GetFullName(), err)
+    end
+
+    -- Watch for new objects
+    container.DescendantAdded:Connect(processObject)
 end
