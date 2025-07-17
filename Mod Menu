@@ -178,9 +178,11 @@ tabContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
 tabContainer.BorderSizePixel = 0
 tabContainer.ScrollBarThickness = UserInputService.TouchEnabled and 6 or 4
 tabContainer.ScrollingDirection = Enum.ScrollingDirection.X
-tabContainer.AutomaticCanvasSize = Enum.AutomaticSize.X
+tabContainer.CanvasSize = UDim2.new(0, 0, 0, 0)  -- Initialize with zero size
+tabContainer.AutomaticCanvasSize = Enum.AutomaticSize.X  -- Enable automatic sizing
 tabContainer.ScrollingEnabled = true
 tabContainer.ElasticBehavior = Enum.ElasticBehavior.Always
+tabContainer.HorizontalScrollBarInset = Enum.ScrollBarInset.ScrollBar  -- Fix scrollbar overlap
 tabContainer.Parent = mainFrame
 
 local tabCorner = Instance.new("UICorner")
@@ -262,6 +264,8 @@ for _, tabInfo in ipairs(tabs) do
     contentPage.ScrollBarThickness = UserInputService.TouchEnabled and 8 or 6
     contentPage.ScrollingEnabled = true
     contentPage.ElasticBehavior = Enum.ElasticBehavior.Always
+    contentPage.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar  -- Fix scrollbar overlap
+    contentPage.AutomaticCanvasSize = Enum.AutomaticSize.Y  -- Enable automatic sizing
     contentPage.Visible = false
     contentPage.Parent = contentContainer
     
@@ -891,9 +895,18 @@ local originalContentPos = contentContainer.Position
 
 local function toggleMinimize()
     minimized = not minimized
-    local targetSize = minimized and UDim2.new(0, 500, 0, 40) or originalSize
+    local targetSize = minimized and 
+        (UserInputService.TouchEnabled and UDim2.new(0.98, 0, 0, 60) or UDim2.new(0, 500, 0, 40)) 
+        or originalSize
     local targetContentSize = minimized and UDim2.new(1, -20, 0, 0) or originalContentSize
     local targetContentPos = minimized and UDim2.new(0, 10, 0, 40) or originalContentPos
+    
+    -- Disable scrolling when minimized
+    for _, tabInfo in pairs(tabPages) do
+        if tabInfo.page then
+            tabInfo.page.ScrollingEnabled = not minimized
+        end
+    end
     
     -- Animate size change
     TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = targetSize}):Play()
