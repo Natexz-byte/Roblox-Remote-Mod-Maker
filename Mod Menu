@@ -374,7 +374,7 @@ local function parseArgs(argText)
             end
         elseif char == "," and not inString then
             if current ~= "" then
-                table.insert(args, current)
+                table.insert(args, current:match("^%s*(.-)%s*$")) -- Trim whitespace
                 current = ""
             end
         else
@@ -383,12 +383,11 @@ local function parseArgs(argText)
     end
     
     if current ~= "" then
-        table.insert(args, current)
+        table.insert(args, current:match("^%s*(.-)%s*$")) -- Trim whitespace
     end
     
     -- Process each argument
     for i, arg in ipairs(args) do
-        arg = arg:match("^%s*(.-)%s*$") -- Trim whitespace
         if arg:match("^%d+%.?%d*$") then -- Number
             args[i] = tonumber(arg)
         elseif arg:lower() == "true" then
@@ -401,19 +400,6 @@ local function parseArgs(argText)
     end
     
     return args
-    
-    local success, args = pcall(function()
-        -- Create a safe wrapper
-        local code = "return {" .. argText .. "}"
-        local fn, err = loadstring(code)
-        if not fn then return {} end
-        
-        -- Execute in protected mode
-        local ok, result = pcall(fn)
-        return ok and result or {}
-    end)
-    
-    return success and args or {}
 end
 
 -- Initialize favorites table if it doesn't exist
@@ -834,19 +820,26 @@ local function beginDrag(input)
 end
 
 local function updateDrag(input)
-    if dragging then
+    if dragging and dragStart and startPos then
         local delta = input.Position - dragStart
-        local newPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        -- Add bounds checking to keep GUI on screen
-        local viewportSize = workspace.CurrentCamera.ViewportSize
-        local frameSize = mainFrame.AbsoluteSize
-        newPosition = UDim2.new(
-            newPosition.X.Scale,
-            math.clamp(newPosition.X.Offset, 0, viewportSize.X - frameSize.X),
-            newPosition.Y.Scale,
-            math.clamp(newPosition.Y.Offset, 0, viewportSize.Y - frameSize.Y)
-        )
-        mainFrame.Position = newPosition
+        -- Only update if the delta is valid
+        if typeof(delta) == "Vector2" then
+            local newPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            -- Add bounds checking to keep GUI on screen
+            local viewportSize = workspace.CurrentCamera.ViewportSize
+            local frameSize = mainFrame.AbsoluteSize
+            
+            -- Ensure we have valid numbers
+            if viewportSize and frameSize then
+                newPosition = UDim2.new(
+                    newPosition.X.Scale,
+                    math.clamp(newPosition.X.Offset, 0, viewportSize.X - frameSize.X),
+                    newPosition.Y.Scale,
+                    math.clamp(newPosition.Y.Offset, 0, viewportSize.Y - frameSize.Y)
+                )
+                mainFrame.Position = newPosition
+            end
+        end
     end
 end
 
@@ -878,29 +871,32 @@ titleBar.TouchStarted:Connect(beginDrag)
 titleBar.TouchMoved:Connect(updateDrag)
 titleBar.TouchEnded:Connect(endDrag)
 
---// Start scanning
-title.Text = "🔄 Scanning game..."
-wait(0.5)
-scan(game.ReplicatedStorage)
-scan(game.Workspace)
-scan(game:GetService("StarterGui"))
-scan(game:GetService("StarterPlayer"))
+-- Start scanning is now handled by the startScanning function
+-- Remove duplicate scanning calls
 
-title.Text = "🎮 Game Mod Menu"
-print("🎮 Game Mod Menu loaded successfully!")
+-- Variable to track if we've already scanned
+local hasScanned = false
 
---// Fixed scanning function with better error handling
+--// Fixed scanning function with better error handling and duplicate prevention
 local function scan(container)
+    if hasScanned then return end -- Prevent duplicate scanning
+    
     if not container or not container:IsA("Instance") then
         warn("Invalid container for scanning")
         return
     end
 
+    local scannedRemotes = {}
+    
     local function processObject(obj)
         if not obj or not obj:IsA("Instance") then return end
         
+        -- Check if we've already processed this remote
+        if scannedRemotes[obj] then return end
+        
         local success, err = pcall(function()
             if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and obj.Parent then
+                scannedRemotes[obj] = true
                 addRemote(obj)
             end
         end)
