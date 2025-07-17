@@ -137,10 +137,10 @@ tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     tabContainer.CanvasSize = UDim2.new(0, tabLayout.AbsoluteContentSize.X + 10, 0, 0)
 end)
 
--- Content container for each tab
+-- Content container for each tab with enhanced mobile layout
 local contentContainer = Instance.new("Frame")
-contentContainer.Size = UDim2.new(1, -20, 1, -110)
-contentContainer.Position = UDim2.new(0, 10, 0, 110)
+contentContainer.Size = UserInputService.TouchEnabled and UDim2.new(1, -10, 1, -120) or UDim2.new(1, -20, 1, -110)
+contentContainer.Position = UserInputService.TouchEnabled and UDim2.new(0, 5, 0, 110) or UDim2.new(0, 10, 0, 110)
 contentContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
 contentContainer.BorderSizePixel = 0
 contentContainer.Parent = mainFrame
@@ -165,17 +165,29 @@ local tabs = {
 }
 
 for _, tabInfo in ipairs(tabs) do
-    -- Create tab button with fixed width
+    -- Create tab button with adaptive width for mobile
     local tabButton = Instance.new("TextButton")
-    tabButton.Size = UDim2.new(0, 100, 1, -10)
+    tabButton.Size = UserInputService.TouchEnabled and UDim2.new(0, 120, 1, -10) or UDim2.new(0, 100, 1, -10)
     tabButton.Position = UDim2.new(0, 5, 0, 5)
     tabButton.BackgroundColor3 = tabInfo.color
     tabButton.BackgroundTransparency = 0.5
     tabButton.Text = tabInfo.name
     tabButton.TextColor3 = Color3.new(1, 1, 1)
     tabButton.Font = Enum.Font.GothamBold
-    tabButton.TextSize = 14
+    tabButton.TextSize = UserInputService.TouchEnabled and 16 or 14
     tabButton.Parent = tabContainer
+    
+    -- Add hover and press effects
+    tabButton.MouseEnter:Connect(function()
+        if tabButton ~= activeTab then
+            tabButton.BackgroundTransparency = 0.3
+        end
+    end)
+    tabButton.MouseLeave:Connect(function()
+        if tabButton ~= activeTab then
+            tabButton.BackgroundTransparency = 0.5
+        end
+    end)
     
     local tabButtonCorner = Instance.new("UICorner")
     tabButtonCorner.CornerRadius = UDim.new(0, 6)
@@ -469,10 +481,24 @@ local function addRemote(remote)
     
     -- Create container
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, -10, 0, 70)
+    container.Size = UserInputService.TouchEnabled and UDim2.new(1, -10, 0, 90) or UDim2.new(1, -10, 0, 70)
     container.BorderSizePixel = 0
     container.Name = remote.Name
     container.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    -- Add hover effect
+    local function updateHover(transparency)
+        container.BackgroundColor3 = Color3.fromRGB(
+            math.min(40 + (1-transparency) * 20, 255),
+            math.min(40 + (1-transparency) * 20, 255),
+            math.min(60 + (1-transparency) * 20, 255)
+        )
+    end
+    container.MouseEnter:Connect(function()
+        updateHover(0.8)
+    end)
+    container.MouseLeave:Connect(function()
+        updateHover(1)
+    end)
     container.Parent = tabPage.page
 
     -- Add rounded corners
@@ -714,11 +740,24 @@ end
 minimizeButton.MouseButton1Click:Connect(toggleMinimize)
 minimizeButton.TouchTap:Connect(toggleMinimize)
 
--- Make minimize button more visible on mobile
+-- Enhanced mobile support for buttons
 if UserInputService.TouchEnabled then
-    minimizeButton.Size = UDim2.new(0, 40, 0, 30) -- Larger touch target
-    minimizeButton.TextSize = 20 -- Larger text
-    minimizeButton.Position = UDim2.new(1, -80, 0, 5) -- Adjust position
+    -- Make minimize button more visible and touchable
+    minimizeButton.Size = UDim2.new(0, 50, 0, 35)
+    minimizeButton.TextSize = 24
+    minimizeButton.Position = UDim2.new(1, -95, 0, 2)
+    minimizeButton.BackgroundTransparency = 0
+    
+    -- Also enhance close button for mobile
+    closeButton.Size = UDim2.new(0, 50, 0, 35)
+    closeButton.TextSize = 24
+    closeButton.Position = UDim2.new(1, -40, 0, 2)
+    closeButton.BackgroundTransparency = 0
+    
+    -- Adjust search bar for mobile
+    searchBar.Size = UDim2.new(0, 180, 0, 35)
+    searchBar.Position = UDim2.new(1, -235, 0, 2)
+    searchBar.TextSize = 16
 end
 
 --// Scan for remotes (fixed version)
@@ -807,37 +846,72 @@ task.spawn(function()
     end
 end)
 
--- Make draggable (with mobile support)
+-- Make draggable (with enhanced mobile support)
 local dragging = false
 local dragStart = nil
 local startPos = nil
+local lastTouchPosition = nil
 local isMobile = UserInputService.TouchEnabled
 
 local function beginDrag(input)
+    if isMobile and input.UserInputType == Enum.UserInputType.Touch then
+        lastTouchPosition = input.Position
+    end
     dragging = true
     dragStart = input.Position
     startPos = mainFrame.Position
+    
+    -- Visual feedback for drag start
+    if isMobile then
+        titleBar.BackgroundColor3 = Color3.fromRGB(55, 55, 75)
+    end
 end
 
 local function updateDrag(input)
     if dragging and dragStart and startPos then
-        local delta = input.Position - dragStart
+        local currentPosition = input.Position
+        local delta
+        
+        if isMobile then
+            -- Use touch position tracking for smoother mobile dragging
+            if lastTouchPosition then
+                delta = currentPosition - lastTouchPosition
+                dragStart = currentPosition
+            else
+                delta = Vector2.new(0, 0)
+            end
+            lastTouchPosition = currentPosition
+        else
+            delta = currentPosition - dragStart
+        end
+        
         -- Only update if the delta is valid
         if typeof(delta) == "Vector2" then
-            local newPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            -- Add bounds checking to keep GUI on screen
+            local newPosition = UDim2.new(
+                startPos.X.Scale, 
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale, 
+                startPos.Y.Offset + delta.Y
+            )
+            
+            -- Add bounds checking to keep GUI on screen with padding
             local viewportSize = workspace.CurrentCamera.ViewportSize
             local frameSize = mainFrame.AbsoluteSize
+            local padding = isMobile and 10 or 0 -- Extra padding for mobile
             
-            -- Ensure we have valid numbers
             if viewportSize and frameSize then
                 newPosition = UDim2.new(
                     newPosition.X.Scale,
-                    math.clamp(newPosition.X.Offset, 0, viewportSize.X - frameSize.X),
+                    math.clamp(newPosition.X.Offset, padding, viewportSize.X - frameSize.X - padding),
                     newPosition.Y.Scale,
-                    math.clamp(newPosition.Y.Offset, 0, viewportSize.Y - frameSize.Y)
+                    math.clamp(newPosition.Y.Offset, padding, viewportSize.Y - frameSize.Y - padding)
                 )
+                
+                -- Smoothly update position
                 mainFrame.Position = newPosition
+                if isMobile then
+                    startPos = newPosition -- Update start position for smoother mobile dragging
+                end
             end
         end
     end
@@ -845,6 +919,11 @@ end
 
 local function endDrag()
     dragging = false
+    lastTouchPosition = nil
+    -- Reset visual feedback
+    if isMobile then
+        titleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+    end
 end
 
 -- Mouse support
