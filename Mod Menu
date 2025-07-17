@@ -522,22 +522,19 @@ end
 --// Add remote to UI (improved version with better organization)
 local function addRemote(remote)
     -- Basic validation with error handling
-    local success, result = pcall(function()
-        if not remote or not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then 
-            return false
-        end
-        
-        -- Only show remotes relevant to the local player
-        if not isPlayerRemote(remote) then
-            return false
-        end
-        
-        return true
-    end)
-    
-    if not success or not result then
-        warn("Failed to add remote:", remote and remote:GetFullName() or "nil")
+    if not remote then 
+        warn("Attempted to add nil remote")
         return
+    end
+    
+    if not (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+        return
+    end
+    
+    -- Get category before validation to ensure proper categorization
+    local category = getRemoteCategory(remote)
+    if not category then
+        category = "other"
     end
     
     -- Get category and validate tab page exists
@@ -784,23 +781,41 @@ local function addRemote(remote)
     end
 end
 
---// Simplified scan function
+--// Enhanced scan function with better error handling
 local function scan(container)
-    if not container then return end
+    if not container then 
+        warn("Attempted to scan nil container")
+        return 
+    end
     
-    -- Scan existing remotes
-    for _, obj in ipairs(container:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            addRemote(obj)
+    local function processObject(obj)
+        if not obj then return end
+        
+        local success, err = pcall(function()
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                print("Found remote:", obj:GetFullName())  -- Debug logging
+                addRemote(obj)
+            end
+        end)
+        
+        if not success then
+            warn("Failed to process remote:", obj:GetFullName(), err)
         end
     end
     
-    -- Watch for new remotes
-    container.DescendantAdded:Connect(function(obj)
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            addRemote(obj)
+    -- Scan existing remotes with error handling
+    local success, err = pcall(function()
+        for _, obj in ipairs(container:GetDescendants()) do
+            processObject(obj)
         end
     end)
+    
+    if not success then
+        warn("Failed to scan container:", container:GetFullName(), err)
+    end
+    
+    -- Watch for new remotes
+    container.DescendantAdded:Connect(processObject)
 end
 
 -- Start scanning process with improved error handling
@@ -812,14 +827,24 @@ local function startScanning()
 
     title.Text = "🔄 Scanning game..."
     
+    -- Enhanced scanning locations
     local locations = {
         game:GetService("ReplicatedStorage"),
         game:GetService("StarterGui"),
         game:GetService("StarterPlayer"),
         game:GetService("Workspace"),
         game:GetService("ReplicatedFirst"),
-        game:GetService("Players").LocalPlayer.PlayerGui
+        game:GetService("Players").LocalPlayer.PlayerGui,
+        game:GetService("Players").LocalPlayer.Character,
+        game:GetService("Players").LocalPlayer.Backpack
     }
+    
+    -- Also scan any current game.Loaded packages
+    for _, instance in ipairs(game:GetChildren()) do
+        if instance:IsA("Folder") or instance:IsA("Model") then
+            table.insert(locations, instance)
+        end
+    end
     
     local successCount = 0
     for _, location in ipairs(locations) do
@@ -1025,5 +1050,10 @@ titleBar.TouchEnded:Connect(endDrag)
 -- Start scanning is now handled by the startScanning function
 -- Remove duplicate scanning calls
 
--- Start initial scan
+-- Start scanning with delay to ensure UI is ready
+task.wait(0.1) -- Small delay to ensure UI is fully initialized
+print("Starting initial scan...")
 startScanning()
+
+-- Debug message
+print("UI Initialization completed")
