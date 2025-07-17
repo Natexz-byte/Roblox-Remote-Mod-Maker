@@ -293,30 +293,53 @@ for _, tabInfo in ipairs(tabs) do
     
     -- Tab button click handler with visual feedback
     tabButton.MouseButton1Click:Connect(function()
-        if activeTab then
-            activeTab.button.BackgroundTransparency = 0.5
-            activeTab.page.Visible = false
+        -- Hide all tabs first
+        for _, tab in pairs(tabPages) do
+            if tab.button and tab.page then
+                tab.button.BackgroundTransparency = 0.5
+                tab.page.Visible = false
+            end
         end
-        activeTab = tabPages[tabInfo.name:lower()]
-        activeTab.button.BackgroundTransparency = 0
-        activeTab.page.Visible = true
         
-        -- Visual feedback
-        local originalColor = tabButton.BackgroundColor3
-        tabButton.BackgroundColor3 = Color3.new(
-            math.min(1, originalColor.R * 1.2),
-            math.min(1, originalColor.G * 1.2),
-            math.min(1, originalColor.B * 1.2)
-        )
-        wait(0.2)
-        tabButton.BackgroundColor3 = originalColor
+        -- Show selected tab
+        activeTab = tabPages[tabInfo.name:lower()]
+        if activeTab then
+            activeTab.button.BackgroundTransparency = 0
+            activeTab.page.Visible = true
+            
+            -- Visual feedback
+            local originalColor = tabButton.BackgroundColor3
+            tabButton.BackgroundColor3 = Color3.new(
+                math.min(1, originalColor.R * 1.2),
+                math.min(1, originalColor.G * 1.2),
+                math.min(1, originalColor.B * 1.2)
+            )
+            task.wait(0.2)
+            tabButton.BackgroundColor3 = originalColor
+            
+            -- Debug print
+            print("Switched to tab:", tabInfo.name, "Page visible:", activeTab.page.Visible)
+        end
     end)
+    end)
+end
+
+-- Initialize all tabs first
+for _, tabInfo in pairs(tabPages) do
+    if tabInfo.page then
+        tabInfo.page.Visible = false
+    end
+    if tabInfo.button then
+        tabInfo.button.BackgroundTransparency = 0.5
+    end
 end
 
 -- Set initial active tab
 activeTab = tabPages["give"]
-activeTab.button.BackgroundTransparency = 0
-activeTab.page.Visible = true
+if activeTab then
+    activeTab.button.BackgroundTransparency = 0
+    activeTab.page.Visible = true
+end
 
 --// Enhanced keyword detection with categories
 local keywords = {
@@ -525,25 +548,30 @@ end
 
 --// Add remote to UI (improved version with better organization)
 local function addRemote(remote)
-    -- Basic validation with error handling
-    if not remote then 
-        warn("Attempted to add nil remote")
-        return
+    if not remote or not remote.Parent then return end
+    if not (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then return end
+    
+    -- Force remotes into categories
+    local category = "other"
+    local name = remote.Name:lower()
+    local path = remote:GetFullName():lower()
+    
+    -- Simple categorization based on name
+    if string.find(name, "give") or string.find(name, "add") or string.find(name, "get") then
+        category = "give"
+    elseif string.find(name, "stat") or string.find(name, "level") or string.find(name, "xp") then
+        category = "stats"
+    elseif string.find(name, "coin") or string.find(name, "money") or string.find(name, "cash") then
+        category = "currency"
+    elseif string.find(name, "damage") or string.find(name, "kill") or string.find(name, "attack") then
+        category = "combat"
+    elseif string.find(name, "teleport") or string.find(name, "tp") or string.find(name, "goto") then
+        category = "teleport"
+    elseif string.find(name, "player") or string.find(name, "character") then
+        category = "player"
     end
     
-    if not (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
-        return
-    end
-    
-    -- Get category before validation to ensure proper categorization
-    local category = getRemoteCategory(remote)
-    if not category then
-        category = "other"
-    end
-    
-    -- Get category and validate tab page exists
-    local category = getRemoteCategory(remote)
-    local tabPage = tabPages[category:lower()]
+    local tabPage = tabPages[category]
     if not tabPage or not tabPage.page then
         tabPage = tabPages["other"]
         if not tabPage then return end
@@ -779,33 +807,29 @@ local function addRemote(remote)
     end
 
     -- Update content size
-    local contentSize = tabPage.layout.AbsoluteContentSize
-    if contentSize then
-        tabPage.page.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
-    end
-end
-
---// Enhanced scan function with better error handling
 local function scan(container)
-    if not container then 
-        warn("Attempted to scan nil container")
-        return 
-    end
+    if not container then return end
     
-    local function processObject(obj)
-        if not obj then return end
-        
-        local success, err = pcall(function()
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                print("Found remote:", obj:GetFullName())  -- Debug logging
-                addRemote(obj)
-            end
-        end)
-        
-        if not success then
-            warn("Failed to process remote:", obj:GetFullName(), err)
+    -- Scan all descendants for remotes
+    for _, obj in ipairs(container:GetDescendants()) do
+        if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and obj.Parent then
+            addRemote(obj)
         end
     end
+    
+    -- Watch for new remotes
+    container.DescendantAdded:Connect(function(obj)
+        if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and obj.Parent then
+            addRemote(obj)
+        end
+    end)
+    local initialCount = 0
+    for _, obj in ipairs(container:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            initialCount = initialCount + 1
+        end
+    end
+    print("Found", initialCount, "remotes in", container:GetFullName())
     
     -- Scan existing remotes with error handling
     local success, err = pcall(function()
@@ -829,19 +853,28 @@ local function startScanning()
         return
     end
 
+    print("Starting scan process...")
     title.Text = "🔄 Scanning game..."
     
-    -- Enhanced scanning locations
-    local locations = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("StarterGui"),
-        game:GetService("StarterPlayer"),
-        game:GetService("Workspace"),
-        game:GetService("ReplicatedFirst"),
-        game:GetService("Players").LocalPlayer.PlayerGui,
-        game:GetService("Players").LocalPlayer.Character,
-        game:GetService("Players").LocalPlayer.Backpack
-    }
+    -- Clear existing remotes from UI
+    for _, tabInfo in pairs(tabPages) do
+        if tabInfo.page then
+            for _, child in ipairs(tabInfo.page:GetChildren()) do
+local function startScanning()
+    title.Text = "🔄 Scanning game..."
+    
+    -- Clear all tabs
+    for _, tabInfo in pairs(tabPages) do
+        if tabInfo.page then
+            for _, child in ipairs(tabInfo.page:GetChildren()) do
+                if child:IsA("Frame") then
+                    child:Destroy()
+                end
+            end
+        end
+    end table.insert(locations, game:GetService("Players").LocalPlayer.Character)
+        table.insert(locations, game:GetService("Players").LocalPlayer.Backpack)
+    end
     
     -- Also scan any current game.Loaded packages
     for _, instance in ipairs(game:GetChildren()) do
