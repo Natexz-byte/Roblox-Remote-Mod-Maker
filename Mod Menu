@@ -2,13 +2,13 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local player = Players.LocalPlayer
+local RunService = game:GetService("RunService")
 
--- Error checking for essential services
-if not player then
-    error("LocalPlayer not found")
-    return
-end
+-- Wait for player
+local player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+
+-- Make sure we're running on the client
+if not RunService:IsClient() then return end
 
 --// GUI Setup
 local screenGui = Instance.new("ScreenGui")
@@ -324,21 +324,31 @@ for _, tabInfo in ipairs(tabs) do
     end)
 end
 
+-- Create tables if they don't exist
+tabPages = tabPages or {}
+activeTab = nil
+
 -- Initialize all tabs first
 for _, tabInfo in pairs(tabPages) do
-    if tabInfo.page then
-        tabInfo.page.Visible = false
-    end
-    if tabInfo.button then
-        tabInfo.button.BackgroundTransparency = 0.5
+    if type(tabInfo) == "table" then
+        if tabInfo.page and tabInfo.page.Parent then
+            tabInfo.page.Visible = false
+        end
+        if tabInfo.button and tabInfo.button.Parent then
+            tabInfo.button.BackgroundTransparency = 0.5
+        end
     end
 end
 
 -- Set initial active tab
-activeTab = tabPages["give"]
-if activeTab then
-    activeTab.button.BackgroundTransparency = 0
-    activeTab.page.Visible = true
+if tabPages["give"] then
+    activeTab = tabPages["give"]
+    if activeTab.button and activeTab.button.Parent then
+        activeTab.button.BackgroundTransparency = 0
+    end
+    if activeTab.page and activeTab.page.Parent then
+        activeTab.page.Visible = true
+    end
 end
 
 --// Enhanced keyword detection with categories
@@ -537,9 +547,11 @@ local function isPlayerRemote(remote)
     if string.find(path, "replicatedstorage") then
         return true
     end
-    
-    -- Check if remote is in StarterGui or StarterPlayer (UI related)
-    if string.find(path, "startergui") or string.find(path, "starterplayer") then
+local function addRemote(remote)
+    -- Check if the remote and UI elements exist
+    if not remote or not remote.Parent then return end
+    if not (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then return end
+    if not tabPages or type(tabPages) ~= "table" then return end
         return true
     end
     
@@ -559,7 +571,11 @@ local function addRemote(remote)
     -- Simple categorization based on name
     if string.find(name, "give") or string.find(name, "add") or string.find(name, "get") then
         category = "give"
-    elseif string.find(name, "stat") or string.find(name, "level") or string.find(name, "xp") then
+    local tabPage = tabPages[category]
+    if not tabPage or not tabPage.page or not tabPage.page.Parent then
+        tabPage = tabPages["other"]
+        if not tabPage or not tabPage.page or not tabPage.page.Parent then return end
+    endr string.find(name, "level") or string.find(name, "xp") then
         category = "stats"
     elseif string.find(name, "coin") or string.find(name, "money") or string.find(name, "cash") then
         category = "currency"
@@ -861,14 +877,18 @@ local function startScanning()
         if tabInfo.page then
             for _, child in ipairs(tabInfo.page:GetChildren()) do
 local function startScanning()
+    if not title or not title.Parent then return end
+    
     title.Text = "🔄 Scanning game..."
     
     -- Clear all tabs
-    for _, tabInfo in pairs(tabPages) do
-        if tabInfo.page then
-            for _, child in ipairs(tabInfo.page:GetChildren()) do
-                if child:IsA("Frame") then
-                    child:Destroy()
+    if type(tabPages) == "table" then
+        for _, tabInfo in pairs(tabPages) do
+            if tabInfo and tabInfo.page and tabInfo.page.Parent then
+                for _, child in ipairs(tabInfo.page:GetChildren()) do
+                    if child:IsA("Frame") then
+                        child:Destroy()
+                    end
                 end
             end
         end
