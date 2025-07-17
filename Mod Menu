@@ -66,9 +66,14 @@ createShadow(mainFrame, 8, 4, 0.85)
 createShadow(mainFrame, 6, 3, 0.8)
 createShadow(mainFrame, 4, 2, 0.75)
 
-local shadowCorner = Instance.new("UICorner")
-shadowCorner.CornerRadius = UDim.new(0, 12)
-shadowCorner.Parent = shadow
+-- Add corner radius to each shadow
+for _, shadow in ipairs(mainFrame:GetChildren()) do
+    if shadow:IsA("Frame") and shadow.ZIndex == -1 then
+        local shadowCorner = Instance.new("UICorner")
+        shadowCorner.CornerRadius = UDim.new(0, 12)
+        shadowCorner.Parent = shadow
+    end
+end
 
 -- Title bar with modern gradient
 local titleBar = Instance.new("Frame")
@@ -886,92 +891,6 @@ if UserInputService.TouchEnabled then
     searchBar.TextSize = 16
 end
 
---// Scan for remotes (fixed version)
-local function scan(container)
-    if not container or typeof(container) ~= "Instance" then
-        warn("Invalid container provided to scan function")
-        return
-    end
-    
-    local function addRemoteIfValid(obj)
-        if not obj or not obj.Parent then return end
-        
-        local success, err = pcall(function()
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                task.spawn(function()
-                    addRemote(obj)
-                end)
-            end
-        end)
-        
-        if not success then
-            warn("Failed to process remote: " .. obj:GetFullName() .. " - " .. tostring(err))
-        end
-    end
-    
-    -- Scan existing objects with error handling
-    local success, err = pcall(function()
-        for _, obj in ipairs(container:GetDescendants()) do
-            addRemoteIfValid(obj)
-        end
-    end)
-    
-    if not success then
-        warn("Failed to scan container: " .. container:GetFullName() .. " - " .. tostring(err))
-    end
-    
-    -- Watch for new objects with error handling
-    container.DescendantAdded:Connect(function(obj)
-        addRemoteIfValid(obj)
-    end)
-end
-
--- Start scanning with proper error handling and status updates
-title.Text = "🔄 Scanning game..."
-
-local function scanGame()
-    local scanLocations = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("StarterGui"),
-        game:GetService("StarterPlayer"),
-        game:GetService("Workspace"),
-        game:GetService("ReplicatedFirst"),
-        game:GetService("StarterPack")
-    }
-    
-    local successCount = 0
-    for _, location in ipairs(scanLocations) do
-        local success = pcall(function()
-            if location then
-                scan(location)
-                successCount = successCount + 1
-            end
-        end)
-        
-        if not success then
-            warn("Failed to scan location: " .. location.Name)
-        end
-    end
-    
-    -- Update title based on scan results
-    if successCount == #scanLocations then
-        title.Text = "🎮 Game Mod Menu"
-        print("✅ Game Mod Menu loaded successfully!")
-    else
-        title.Text = "🎮 Game Mod Menu (Partial Scan)"
-        warn("⚠️ Some locations could not be scanned (" .. successCount .. "/" .. #scanLocations .. " successful)")
-    end
-end
-
--- Run scanning in protected thread
-task.spawn(function()
-    local success, err = pcall(scanGame)
-    if not success then
-        warn("❌ Critical error during scanning: " .. tostring(err))
-        title.Text = "🎮 Game Mod Menu (Error)"
-    end
-end)
-
 -- Make draggable (with enhanced mobile support)
 local dragging = false
 local dragStart = nil
@@ -1082,46 +1001,5 @@ titleBar.TouchEnded:Connect(endDrag)
 -- Variable to track if we've already scanned
 local hasScanned = false
 
---// Fixed scanning function with better error handling and duplicate prevention
-local function scan(container)
-    if hasScanned then return end -- Prevent duplicate scanning
-    
-    if not container or not container:IsA("Instance") then
-        warn("Invalid container for scanning")
-        return
-    end
-
-    local scannedRemotes = {}
-    
-    local function processObject(obj)
-        if not obj or not obj:IsA("Instance") then return end
-        
-        -- Check if we've already processed this remote
-        if scannedRemotes[obj] then return end
-        
-        local success, err = pcall(function()
-            if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and obj.Parent then
-                scannedRemotes[obj] = true
-                addRemote(obj)
-            end
-        end)
-        
-        if not success then
-            warn("Failed to process object:", obj:GetFullName(), err)
-        end
-    end
-
-    -- Scan existing objects
-    local success, err = pcall(function()
-        for _, obj in ipairs(container:GetDescendants()) do
-            processObject(obj)
-        end
-    end)
-
-    if not success then
-        warn("Failed to scan container:", container:GetFullName(), err)
-    end
-
-    -- Watch for new objects
-    container.DescendantAdded:Connect(processObject)
-end
+-- The scan function is already defined above
+-- No duplicate function needed here
